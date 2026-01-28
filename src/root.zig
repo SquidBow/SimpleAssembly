@@ -51,3 +51,46 @@ pub const Cpu = struct {
         }
     }
 };
+
+test "InstructionsAdd" {
+    var cpu = Cpu.init();
+    const instruction = Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 5 } } };
+
+    try cpu.executeInstruction(instruction);
+    try std.testing.expect(cpu.registers[0] == 5);
+}
+
+test "InstructionsSub" {
+    var cpu = Cpu.init();
+    const instruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .value = -5 } } };
+
+    try cpu.executeInstruction(instruction);
+    try std.testing.expect(cpu.registers[0] == 5);
+}
+
+test "InstructionsMov" {
+    var cpu = Cpu.init();
+    const instruction = Instructions{ .mov = .{ .regA = 0, .valB = .{ .value = 5 } } };
+
+    try cpu.executeInstruction(instruction);
+    try std.testing.expect(cpu.registers[0] == 5);
+}
+
+test "AddSubMov" {
+    var cpu = Cpu.init();
+    // std.debug.print("Welcome to my new pc: {s}.\n", .{pc.name});
+
+    var myInstruction = Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 10 } } };
+    try cpu.executeInstruction(myInstruction);
+
+    myInstruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .value = 5 } } };
+    try cpu.executeInstruction(myInstruction);
+
+    myInstruction = Instructions{ .mov = .{ .regA = 1, .valB = .{ .value = 4 } } };
+    try cpu.executeInstruction(myInstruction);
+
+    myInstruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .register = 1 } } };
+    try cpu.executeInstruction(myInstruction);
+
+    try std.testing.expect(cpu.registers[0] == 1);
+}
