@@ -31,28 +31,38 @@ pub fn main() !void {
             const instruction = switch (instrCode) {
                 .add => instr: {
                     const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
-                    const valB = try std.fmt.parseInt(i32, tokens.next().?, 10);
 
-                    break :instr root.Instructions{ .add = .{ .regA = regA, .valB = .{ .value = valB } } };
+                    break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
                 },
                 .sub => instr: {
                     const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
-                    const valB = try std.fmt.parseInt(i32, tokens.next().?, 10);
 
-                    break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = .{ .value = valB } } };
+                    break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
                 },
                 .mov => instr: {
                     const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
-                    const valB = try std.fmt.parseInt(i32, tokens.next().?, 10);
 
-                    break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = .{ .value = valB } } };
+                    break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
                 },
                 // else => continue,
             };
 
             try cpu.executeInstruction(instruction);
 
-            std.debug.print("Reg 0: {d}\n", .{cpu.registers[0]});
+            for (0.., cpu.registers) |index, register| {
+                std.debug.print("Reg {d}: {d}\t", .{ index, register });
+            }
+            std.debug.print("\n", .{});
         }
     }
+}
+
+fn parseOperator(op: ?[]const u8) !root.Operator {
+    return if (op) |operand|
+        if (operand[0] == 'r')
+            root.Operator{ .register = try std.fmt.parseUnsigned(u8, operand[1..], 10) }
+        else
+            root.Operator{ .value = try std.fmt.parseInt(i32, operand, 10) }
+    else
+        error.MissingOperand;
 }
