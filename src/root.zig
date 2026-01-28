@@ -78,7 +78,6 @@ test "InstructionsMov" {
 
 test "AddSubMov" {
     var cpu = Cpu.init();
-    // std.debug.print("Welcome to my new pc: {s}.\n", .{pc.name});
 
     var myInstruction = Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 10 } } };
     try cpu.executeInstruction(myInstruction);

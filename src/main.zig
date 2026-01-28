@@ -2,20 +2,20 @@ const std = @import("std");
 const root = @import("root.zig");
 
 pub fn main() !void {
-    var cpu = root.Cpu.init();
-    // std.debug.print("Welcome to my new pc: {s}.\n", .{pc.name});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
 
-    var myInstruction = root.Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 10 } } };
-    try cpu.executeInstruction(myInstruction);
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
-    myInstruction = root.Instructions{ .sub = .{ .regA = 0, .valB = .{ .value = 5 } } };
-    try cpu.executeInstruction(myInstruction);
+    if (args.len < 2) {
+        std.debug.print("Usage: {s} *filename*\n", .{args[0]});
+        return;
+    }
 
-    myInstruction = root.Instructions{ .mov = .{ .regA = 1, .valB = .{ .value = 4 } } };
-    try cpu.executeInstruction(myInstruction);
+    const maxSize = 1024 * 1024;
+    const code = try std.fs.cwd().readFileAlloc(allocator, args[1], maxSize);
+    defer allocator.free(code);
 
-    myInstruction = root.Instructions{ .sub = .{ .regA = 0, .valB = .{ .register = 1 } } };
-    try cpu.executeInstruction(myInstruction);
-
-    std.debug.print("Reg 0: {d}", .{cpu.registers[0]});
+    std.debug.print("{s}", .{code});
 }
