@@ -4,6 +4,8 @@ pub const Instructions = union(enum) {
     add: struct { regA: u8, valB: Operator },
     sub: struct { regA: u8, valB: Operator },
     mov: struct { regA: u8, valB: Operator },
+    jmp: []const u8,
+    je: []const u8,
 };
 
 pub const Operator = union(enum) {
@@ -30,7 +32,18 @@ pub const Cpu = struct {
                     .value => |value| value,
                 };
 
-                self.registers[data.regA] += valB;
+                const addition = @addWithOverflow(self.registers[data.regA], valB);
+                self.registers[data.regA] = addition[0];
+                self.flags[2] = addition[1];
+
+                if (self.registers[data.regA] == 0) {
+                    self.flags[0] = 1;
+                } else if (self.registers[data.regA] < 0) {
+                    self.flags[1] = 1;
+                } else {
+                    self.flags[1] = 0;
+                    self.flags[0] = 0;
+                }
             },
             .sub => |data| {
                 const valB = switch (data.valB) {
@@ -38,7 +51,19 @@ pub const Cpu = struct {
                     .value => |value| value,
                 };
 
-                self.registers[data.regA] -= valB;
+                const subtraction = @subWithOverflow(self.registers[data.regA], valB);
+
+                self.registers[data.regA] = subtraction[0];
+                self.flags[2] = subtraction[1];
+
+                if (self.registers[data.regA] == 0) {
+                    self.flags[0] = 1;
+                } else if (self.registers[data.regA] < 0) {
+                    self.flags[1] = 1;
+                } else {
+                    self.flags[1] = 0;
+                    self.flags[0] = 0;
+                }
             },
             .mov => |data| {
                 const valB = switch (data.valB) {
@@ -47,7 +72,17 @@ pub const Cpu = struct {
                 };
 
                 self.registers[data.regA] = valB;
+
+                if (self.registers[data.regA] == 0) {
+                    self.flags[0] = 1;
+                } else if (self.registers[data.regA] < 0) {
+                    self.flags[1] = 1;
+                } else {
+                    self.flags[1] = 0;
+                    self.flags[0] = 0;
+                }
             },
+            else => {},
         }
     }
 };

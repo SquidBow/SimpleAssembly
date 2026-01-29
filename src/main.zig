@@ -17,7 +17,7 @@ pub fn main() !void {
     const code = try std.fs.cwd().readFileAlloc(allocator, args[1], maxSize);
     defer allocator.free(code);
 
-    var jumpTable = std.StringHashMap(usize).init(allocator);
+    var jumpTable = std.StringHashMap(u32).init(allocator);
     defer jumpTable.deinit();
 
     // std.debug.print("{s}", .{code});
@@ -33,7 +33,7 @@ pub fn main() !void {
 
         while (lines.next()) |line| {
             if (line[line.len - 1] == ':') {
-                try jumpTable.put(line[0 .. line.len - 2], instructionCount);
+                try jumpTable.put(line[0 .. line.len - 1], instructionCount);
                 continue;
             }
 
@@ -44,20 +44,22 @@ pub fn main() !void {
 
                 const instruction = switch (instrCode) {
                     .add => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
                         break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
                     },
                     .sub => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
-                        break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                        break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
                     },
                     .mov => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
-                        break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                        break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
                     },
+                    .jmp => root.Instructions{ .jmp = tokens.next().? },
+                    .je => root.Instructions{ .je = tokens.next().? },
                     // else => continue,
                 };
 
@@ -66,13 +68,43 @@ pub fn main() !void {
         }
     }
 
+    // {
+    //     for (instructions) |instruction| {
+    //         switch (instruction) {
+    //             .jmp => |target| root.Instructions{ .jmp = try jumpTable.get(target) },
+    //             .je => {},
+    //             else => {},
+    //         }
+    //     }
+    // }
+
     {
         var i: u32 = 0;
 
         while (i < instructions.items.len) : (i += 1) {
             const instruction = instructions.items[i];
 
-            try cpu.executeInstruction(instruction);
+            switch (instruction) {
+                .jmp => |line| {
+                    if (jumpTable.contains(line)) {
+                        i = jumpTable.get(line).?;
+                    } else {
+                        i = try std.fmt.parseUnsigned(u32, line, 10);
+                    }
+                    i -= 1;
+                },
+                .je => |line| {
+                    if (cpu.flags[0] == 1) {
+                        if (jumpTable.contains(line)) {
+                            i = jumpTable.get(line).?;
+                        } else {
+                            i = try std.fmt.parseUnsigned(u32, line, 10);
+                        }
+                    }
+                    i -= 1;
+                },
+                else => try cpu.executeInstruction(instruction),
+            }
 
             for (0.., cpu.registers) |index, register| {
                 std.debug.print("Reg {d}: {d}\t", .{ index, register });
