@@ -36,14 +36,8 @@ pub const Cpu = struct {
                 self.registers[data.regA] = addition[0];
                 self.flags[2] = addition[1];
 
-                if (self.registers[data.regA] == 0) {
-                    self.flags[0] = 1;
-                } else if (self.registers[data.regA] < 0) {
-                    self.flags[1] = 1;
-                } else {
-                    self.flags[1] = 0;
-                    self.flags[0] = 0;
-                }
+                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
+                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
             },
             .sub => |data| {
                 const valB = switch (data.valB) {
@@ -56,14 +50,8 @@ pub const Cpu = struct {
                 self.registers[data.regA] = subtraction[0];
                 self.flags[2] = subtraction[1];
 
-                if (self.registers[data.regA] == 0) {
-                    self.flags[0] = 1;
-                } else if (self.registers[data.regA] < 0) {
-                    self.flags[1] = 1;
-                } else {
-                    self.flags[1] = 0;
-                    self.flags[0] = 0;
-                }
+                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
+                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
             },
             .mov => |data| {
                 const valB = switch (data.valB) {

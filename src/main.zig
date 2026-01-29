@@ -100,8 +100,8 @@ pub fn main() !void {
                         } else {
                             i = try std.fmt.parseUnsigned(u32, line, 10);
                         }
+                        i -= 1;
                     }
-                    i -= 1;
                 },
                 else => try cpu.executeInstruction(instruction),
             }
