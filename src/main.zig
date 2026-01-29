@@ -17,35 +17,60 @@ pub fn main() !void {
     const code = try std.fs.cwd().readFileAlloc(allocator, args[1], maxSize);
     defer allocator.free(code);
 
+    var jumpTable = std.StringHashMap(usize).init(allocator);
+    defer jumpTable.deinit();
+
     // std.debug.print("{s}", .{code});
 
     var lines = std.mem.tokenizeSequence(u8, code, "\n");
+    var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
+    defer instructions.deinit(allocator);
 
     var cpu = root.Cpu.init();
 
-    while (lines.next()) |line| {
-        var tokens = std.mem.tokenizeSequence(u8, line, " ");
-        while (tokens.next()) |token| {
-            const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
+    {
+        var instructionCount: u32 = 0;
 
-            const instruction = switch (instrCode) {
-                .add => instr: {
-                    const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+        while (lines.next()) |line| {
+            if (line[line.len - 1] == ':') {
+                try jumpTable.put(line[0 .. line.len - 2], instructionCount);
+                continue;
+            }
 
-                    break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
-                },
-                .sub => instr: {
-                    const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+            instructionCount += 1;
+            var tokens = std.mem.tokenizeSequence(u8, line, " ");
+            while (tokens.next()) |token| {
+                const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
 
-                    break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
-                },
-                .mov => instr: {
-                    const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+                const instruction = switch (instrCode) {
+                    .add => instr: {
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
 
-                    break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
-                },
-                // else => continue,
-            };
+                        break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                    },
+                    .sub => instr: {
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+
+                        break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                    },
+                    .mov => instr: {
+                        const regA = try std.fmt.parseInt(u8, tokens.next().?, 10);
+
+                        break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                    },
+                    // else => continue,
+                };
+
+                try instructions.append(allocator, instruction);
+            }
+        }
+    }
+
+    {
+        var i: u32 = 0;
+
+        while (i < instructions.items.len) : (i += 1) {
+            const instruction = instructions.items[i];
 
             try cpu.executeInstruction(instruction);
 
