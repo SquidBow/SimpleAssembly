@@ -4,8 +4,10 @@ pub const Instructions = union(enum) {
     add: struct { regA: u8, valB: Operator },
     sub: struct { regA: u8, valB: Operator },
     mov: struct { regA: u8, valB: Operator },
+    cmp: struct { valA: Operator, valB: Operator },
     jmp: []const u8,
     je: []const u8,
+    print: u8,
 };
 
 pub const Operator = union(enum) {
@@ -15,12 +17,12 @@ pub const Operator = union(enum) {
 
 pub const Cpu = struct {
     registers: [4]i32,
-    flags: [8]u8,
+    flags: [3]u8,
 
     pub fn init() Cpu {
         return Cpu{
             .registers = [_]i32{0} ** 4,
-            .flags = [_]u8{0} ** 8,
+            .flags = [_]u8{0} ** 3,
         };
     }
 
@@ -61,16 +63,36 @@ pub const Cpu = struct {
 
                 self.registers[data.regA] = valB;
 
-                if (self.registers[data.regA] == 0) {
-                    self.flags[0] = 1;
-                } else if (self.registers[data.regA] < 0) {
-                    self.flags[1] = 1;
-                } else {
-                    self.flags[1] = 0;
-                    self.flags[0] = 0;
-                }
+                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
+                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
+            },
+            .cmp => |data| {
+                const valB = switch (data.valB) {
+                    .register => |regIndex| self.registers[regIndex],
+                    .value => |value| value,
+                };
+
+                const valA = switch (data.valA) {
+                    .register => |regIndex| self.registers[regIndex],
+                    .value => |value| value,
+                };
+
+                const subtraction = valA - valB;
+
+                self.flags[0] = if (subtraction == 0) 1 else 0;
+                self.flags[1] = if (subtraction < 0) 1 else 0;
+            },
+            .print => |reg| {
+                const char: u8 = @intCast(self.registers[reg]);
+                std.debug.print("{c}", .{char});
             },
             else => {},
+        }
+    }
+
+    pub fn printRegisters(self: *Cpu) void {
+        for (0.., self.registers) |index, register| {
+            std.debug.print("Reg {d}: {d}\t", .{ index, register });
         }
     }
 };

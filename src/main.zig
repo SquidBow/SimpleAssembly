@@ -58,8 +58,12 @@ pub fn main() !void {
 
                         break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
                     },
+                    .cmp => instr: {
+                        break :instr root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } };
+                    },
                     .jmp => root.Instructions{ .jmp = tokens.next().? },
                     .je => root.Instructions{ .je = tokens.next().? },
+                    .print => root.Instructions{ .print = try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
                     // else => continue,
                 };
 
@@ -81,7 +85,9 @@ pub fn main() !void {
     {
         var i: u32 = 0;
 
-        while (i < instructions.items.len) : (i += 1) {
+        while (i < instructions.items.len) : ({
+            i += 1;
+        }) {
             const instruction = instructions.items[i];
 
             switch (instruction) {
@@ -103,13 +109,14 @@ pub fn main() !void {
                         i -= 1;
                     }
                 },
-                else => try cpu.executeInstruction(instruction),
+                else => {
+                    try cpu.executeInstruction(instruction);
+                    // if (instruction != .cmp) {
+                    //     cpu.printRegisters();
+                    //     std.debug.print("\n", .{});
+                    // }
+                },
             }
-
-            for (0.., cpu.registers) |index, register| {
-                std.debug.print("Reg {d}: {d}\t", .{ index, register });
-            }
-            std.debug.print("\n", .{});
         }
     }
 }
