@@ -5,9 +5,14 @@ pub const Instructions = union(enum) {
     sub: struct { regA: u8, valB: Operator },
     mov: struct { regA: u8, valB: Operator },
     cmp: struct { valA: Operator, valB: Operator },
-    jmp: []const u8,
-    je: []const u8,
+    jmp: JumpLabel,
+    je: JumpLabel,
     print: u8,
+};
+
+pub const JumpLabel = union(enum) {
+    value: u32,
+    label: []const u8,
 };
 
 pub const Operator = union(enum) {
@@ -93,6 +98,38 @@ pub const Cpu = struct {
     pub fn printRegisters(self: *Cpu) void {
         for (0.., self.registers) |index, register| {
             std.debug.print("Reg {d}: {d}\t", .{ index, register });
+        }
+    }
+
+    pub fn executeCode(self: *Cpu, instructions: []Instructions) void {
+        {
+            var i: u32 = 0;
+
+            while (i < instructions.len) : ({
+                i += 1;
+            }) {
+                const instruction = instructions[i];
+
+                switch (instruction) {
+                    .jmp => |line| {
+                        i = line.value;
+                        i -= 1;
+                    },
+                    .je => |line| {
+                        if (self.flags[0] == 1) {
+                            i = line.value;
+                            i -= 1;
+                        }
+                    },
+                    else => {
+                        try self.executeInstruction(instruction);
+                        // if (instruction != .cmp) {
+                        //     cpu.printRegisters();
+                        //     std.debug.print("\n", .{});
+                        // }
+                    },
+                }
+            }
         }
     }
 };

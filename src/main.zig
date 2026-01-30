@@ -20,11 +20,12 @@ pub fn main() !void {
     var jumpTable = std.StringHashMap(u32).init(allocator);
     defer jumpTable.deinit();
 
+    var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
+    defer instructions.deinit(allocator);
+
     // std.debug.print("{s}", .{code});
 
     var lines = std.mem.tokenizeSequence(u8, code, "\n");
-    var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
-    defer instructions.deinit(allocator);
 
     var cpu = root.Cpu.init();
 
@@ -61,8 +62,22 @@ pub fn main() !void {
                     .cmp => instr: {
                         break :instr root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } };
                     },
-                    .jmp => root.Instructions{ .jmp = tokens.next().? },
-                    .je => root.Instructions{ .je = tokens.next().? },
+                    .jmp => root.Instructions{ .jmp = instr: {
+                        const jmp = tokens.next().?;
+                        if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
+                            break :instr root.JumpLabel{ .value = lineNumber };
+                        } else |_| {
+                            break :instr root.JumpLabel{ .label = jmp };
+                        }
+                    } },
+                    .je => root.Instructions{ .je = instr: {
+                        const jmp = tokens.next().?;
+                        if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
+                            break :instr root.JumpLabel{ .value = lineNumber };
+                        } else |_| {
+                            break :instr root.JumpLabel{ .label = jmp };
+                        }
+                    } },
                     .print => root.Instructions{ .print = try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
                     // else => continue,
                 };
@@ -72,53 +87,21 @@ pub fn main() !void {
         }
     }
 
-    // {
-    //     for (instructions) |instruction| {
-    //         switch (instruction) {
-    //             .jmp => |target| root.Instructions{ .jmp = try jumpTable.get(target) },
-    //             .je => {},
-    //             else => {},
-    //         }
-    //     }
-    // }
-
     {
-        var i: u32 = 0;
-
-        while (i < instructions.items.len) : ({
-            i += 1;
-        }) {
-            const instruction = instructions.items[i];
-
-            switch (instruction) {
-                .jmp => |line| {
-                    if (jumpTable.contains(line)) {
-                        i = jumpTable.get(line).?;
-                    } else {
-                        i = try std.fmt.parseUnsigned(u32, line, 10);
-                    }
-                    i -= 1;
+        for (instructions.items) |*instruction| {
+            switch (instruction.*) {
+                .jmp => |*target| {
+                    if (target.* == .label) target.* = root.JumpLabel{ .value = jumpTable.get(target.*.label).? };
                 },
-                .je => |line| {
-                    if (cpu.flags[0] == 1) {
-                        if (jumpTable.contains(line)) {
-                            i = jumpTable.get(line).?;
-                        } else {
-                            i = try std.fmt.parseUnsigned(u32, line, 10);
-                        }
-                        i -= 1;
-                    }
+                .je => |*target| {
+                    if (target.* == .label) target.* = root.JumpLabel{ .value = jumpTable.get(target.*.label).? };
                 },
-                else => {
-                    try cpu.executeInstruction(instruction);
-                    // if (instruction != .cmp) {
-                    //     cpu.printRegisters();
-                    //     std.debug.print("\n", .{});
-                    // }
-                },
+                else => {},
             }
         }
     }
+
+    cpu.executeCode(instructions.items);
 }
 
 fn parseOperator(op: ?[]const u8) !root.Operator {
