@@ -1,6 +1,12 @@
 const std = @import("std");
 const root = @import("root.zig");
 
+const Section = enum {
+    data,
+    code,
+    none,
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -25,6 +31,8 @@ pub fn main() !void {
 
     // std.debug.print("{s}", .{code});
 
+    var section: Section = Section.none;
+
     var lines = std.mem.tokenizeSequence(u8, code, "\n");
 
     var cpu = root.Cpu.init();
@@ -37,50 +45,70 @@ pub fn main() !void {
                 try jumpTable.put(line[0 .. line.len - 1], instructionCount);
                 continue;
             }
+            if (line[0] == '.') {
+                const stateString = line[1..];
+
+                if (std.mem.eql(u8, stateString, "data")) {
+                    section = Section.data;
+                } else if (std.mem.eql(u8, stateString, "code")) {
+                    section = Section.code;
+                } else {
+                    std.debug.print("Could not determen the state given: {any}", .{stateString});
+                    return error.UndetermenedState;
+                }
+                continue;
+            }
 
             instructionCount += 1;
             var tokens = std.mem.tokenizeSequence(u8, line, " ");
             while (tokens.next()) |token| {
                 const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
+                var instruction: root.Instructions = undefined;
 
-                const instruction = switch (instrCode) {
-                    .add => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
+                switch (section) {
+                    .none => continue,
+                    .code => {
+                        instruction = switch (instrCode) {
+                            .add => instr: {
+                                const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
-                        break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
-                    },
-                    .sub => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
+                                break :instr root.Instructions{ .add = .{ .regA = regA, .valB = try parseOperator(tokens.next()) } };
+                            },
+                            .sub => instr: {
+                                const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
-                        break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
-                    },
-                    .mov => instr: {
-                        const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
+                                break :instr root.Instructions{ .sub = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
+                            },
+                            .mov => instr: {
+                                const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
-                        break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
+                                break :instr root.Instructions{ .mov = .{ .regA = regA, .valB = try parseOperator(tokens.next().?) } };
+                            },
+                            .cmp => instr: {
+                                break :instr root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } };
+                            },
+                            .jmp => root.Instructions{ .jmp = instr: {
+                                const jmp = tokens.next().?;
+                                if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
+                                    break :instr root.JumpLabel{ .value = lineNumber };
+                                } else |_| {
+                                    break :instr root.JumpLabel{ .label = jmp };
+                                }
+                            } },
+                            .je => root.Instructions{ .je = instr: {
+                                const jmp = tokens.next().?;
+                                if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
+                                    break :instr root.JumpLabel{ .value = lineNumber };
+                                } else |_| {
+                                    break :instr root.JumpLabel{ .label = jmp };
+                                }
+                            } },
+                            .print => root.Instructions{ .print = try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
+                            // else => continue,
+                        };
                     },
-                    .cmp => instr: {
-                        break :instr root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } };
-                    },
-                    .jmp => root.Instructions{ .jmp = instr: {
-                        const jmp = tokens.next().?;
-                        if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
-                            break :instr root.JumpLabel{ .value = lineNumber };
-                        } else |_| {
-                            break :instr root.JumpLabel{ .label = jmp };
-                        }
-                    } },
-                    .je => root.Instructions{ .je = instr: {
-                        const jmp = tokens.next().?;
-                        if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
-                            break :instr root.JumpLabel{ .value = lineNumber };
-                        } else |_| {
-                            break :instr root.JumpLabel{ .label = jmp };
-                        }
-                    } },
-                    .print => root.Instructions{ .print = try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
-                    // else => continue,
-                };
+                    .data => {},
+                }
 
                 try instructions.append(allocator, instruction);
             }
