@@ -7,6 +7,13 @@ const Section = enum {
     none,
 };
 
+const DataTypes = enum {
+    db,
+    dw,
+    dd,
+    dq,
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -23,11 +30,17 @@ pub fn main() !void {
     const code = try std.fs.cwd().readFileAlloc(allocator, args[1], maxSize);
     defer allocator.free(code);
 
-    var jumpTable = std.StringHashMap(u32).init(allocator);
-    defer jumpTable.deinit();
+    var codeTable = std.StringHashMap(u32).init(allocator);
+    defer codeTable.deinit();
+    var dataTable = std.StringHashMap(u32).init(allocator);
+    defer dataTable.deinit();
 
     var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
     defer instructions.deinit(allocator);
+
+    var ram: [1024]u8 = undefined;
+    // defer ;
+    var ramPointer: u16 = 0;
 
     // std.debug.print("{s}", .{code});
 
@@ -42,7 +55,7 @@ pub fn main() !void {
 
         while (lines.next()) |line| {
             if (line[line.len - 1] == ':') {
-                try jumpTable.put(line[0 .. line.len - 1], instructionCount);
+                try codeTable.put(line[0 .. line.len - 1], instructionCount);
                 continue;
             }
             if (line[0] == '.') {
@@ -59,16 +72,16 @@ pub fn main() !void {
                 continue;
             }
 
-            instructionCount += 1;
+            if (section == .code) instructionCount += 1;
             var tokens = std.mem.tokenizeSequence(u8, line, " ");
-            while (tokens.next()) |token| {
-                const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
-                var instruction: root.Instructions = undefined;
 
+            if (tokens.next()) |token| {
                 switch (section) {
                     .none => continue,
                     .code => {
-                        instruction = switch (instrCode) {
+                        const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
+
+                        const instruction = switch (instrCode) {
                             .add => instr: {
                                 const regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10);
 
@@ -87,30 +100,69 @@ pub fn main() !void {
                             .cmp => instr: {
                                 break :instr root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } };
                             },
-                            .jmp => root.Instructions{ .jmp = instr: {
-                                const jmp = tokens.next().?;
-                                if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
-                                    break :instr root.JumpLabel{ .value = lineNumber };
-                                } else |_| {
-                                    break :instr root.JumpLabel{ .label = jmp };
-                                }
-                            } },
-                            .je => root.Instructions{ .je = instr: {
-                                const jmp = tokens.next().?;
-                                if (std.fmt.parseInt(u32, jmp, 10)) |lineNumber| {
-                                    break :instr root.JumpLabel{ .value = lineNumber };
-                                } else |_| {
-                                    break :instr root.JumpLabel{ .label = jmp };
-                                }
-                            } },
+                            .jmp => root.Instructions{
+                                .jmp = try parseLabel(tokens.next()),
+                            },
+                            .je => root.Instructions{
+                                .je = try parseLabel(tokens.next()),
+                            },
                             .print => root.Instructions{ .print = try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
                             // else => continue,
                         };
-                    },
-                    .data => {},
-                }
 
-                try instructions.append(allocator, instruction);
+                        try instructions.append(allocator, instruction);
+                    },
+                    .data => {
+                        //token = name of the variable
+                        if (std.meta.stringToEnum(DataTypes, tokens.next().?)) |dataType| {
+                            const data = tokens.next() orelse return error.UndefinedDataToken;
+                            dataTable.put(token, ramPointer) catch {
+                                std.debug.print("Unable to put the value into the data table", .{});
+                                return error.OutOfMemory;
+                            };
+
+                            switch (dataType) {
+                                .db => {
+                                    const value: u8 = std.fmt.parseInt(u8, data, 10) catch {
+                                        std.debug.print("Wasn't able to parse data u8: {any}", .{data});
+                                        return error.InvalidDataValue;
+                                    };
+                                    ram[ramPointer] = value;
+                                    ramPointer += 1;
+                                },
+                                .dw => {
+                                    const value: u16 = std.fmt.parseInt(u16, data, 10) catch {
+                                        std.debug.print("Wasn't able to parse data u16: {any}", .{data});
+                                        return error.InvalidDataValue;
+                                    };
+                                    std.mem.writeInt(u16, ram[ramPointer..][0..2], value, .little);
+                                    ramPointer += 2;
+
+                                    // std.debug.print("Added: {d} to memory\n", .{value});
+                                },
+                                .dd => {
+                                    const value: u32 = std.fmt.parseInt(u32, data, 10) catch {
+                                        std.debug.print("Wasn't able to parse data u32: {any}", .{data});
+                                        return error.InvalidDataValue;
+                                    };
+                                    std.mem.writeInt(u32, ram[ramPointer..][0..4], value, .little);
+                                    ramPointer += 4;
+                                },
+                                .dq => {
+                                    const value: u64 = std.fmt.parseInt(u64, data, 10) catch {
+                                        std.debug.print("Wasn't able to parse data u64: {any}", .{data});
+                                        return error.InvalidDataValue;
+                                    };
+                                    std.mem.writeInt(u64, ram[ramPointer..][0..8], value, .little);
+                                    ramPointer += 8;
+                                },
+                            }
+                        } else {
+                            std.debug.print("Unable to identify datatype", .{});
+                            return error.InvalidDataType;
+                        }
+                    },
+                }
             }
         }
     }
@@ -119,10 +171,34 @@ pub fn main() !void {
         for (instructions.items) |*instruction| {
             switch (instruction.*) {
                 .jmp => |*target| {
-                    if (target.* == .label) target.* = root.JumpLabel{ .value = jumpTable.get(target.*.label).? };
+                    if (target.* == .label) target.* = root.Label{ .value = codeTable.get(target.*.label).? };
                 },
                 .je => |*target| {
-                    if (target.* == .label) target.* = root.JumpLabel{ .value = jumpTable.get(target.*.label).? };
+                    if (target.* == .label) target.* = root.Label{ .value = codeTable.get(target.*.label).? };
+                },
+                .add => |*target| {
+                    if (target.*.valB == .value and target.*.valB.value == .label) {
+                        target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
+                    }
+                },
+                .sub => |*target| {
+                    if (target.*.valB == .value and target.*.valB.value == .label) {
+                        target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
+                    }
+                },
+                .mov => |*target| {
+                    if (target.*.valB == .value and target.*.valB.value == .label) {
+                        target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
+                    }
+                },
+                .cmp => |*target| {
+                    if (target.*.valA == .value and target.*.valA.value == .label) {
+                        target.*.valA.value = root.Label{ .value = dataTable.get(target.*.valA.value.label).? };
+                    }
+                    if (target.*.valB == .value and target.*.valB.value == .label) {
+                        // std.debug.print("Replaced {any} with {}\n", .{ target.*.valB.value.label, ram[dataTable.get(target.*.valB.value.label).?] });
+                        target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
+                    }
                 },
                 else => {},
             }
@@ -130,14 +206,25 @@ pub fn main() !void {
     }
 
     cpu.executeCode(instructions.items);
+    // cpu.printRegisters();
+}
+
+fn parseLabel(token: ?[]const u8) !root.Label {
+    if (token) |value| {
+        if (std.fmt.parseInt(u32, value, 10)) |lineNumber| {
+            return root.Label{ .value = lineNumber };
+        } else |_| {
+            return root.Label{ .label = value };
+        }
+    } else return error.UndefindLabel;
 }
 
 fn parseOperator(op: ?[]const u8) !root.Operator {
-    return if (op) |operand|
-        if (operand[0] == 'r')
-            root.Operator{ .register = try std.fmt.parseUnsigned(u8, operand[1..], 10) }
-        else
-            root.Operator{ .value = try std.fmt.parseInt(i32, operand, 10) }
-    else
-        error.MissingOperand;
+    if (op) |operand| {
+        if (operand[0] == 'r') {
+            return root.Operator{ .register = try std.fmt.parseUnsigned(u8, operand[1..], 10) };
+        } else {
+            return root.Operator{ .value = try parseLabel(operand) };
+        }
+    } else return error.MissingOperand;
 }

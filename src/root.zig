@@ -5,19 +5,19 @@ pub const Instructions = union(enum) {
     sub: struct { regA: u8, valB: Operator },
     mov: struct { regA: u8, valB: Operator },
     cmp: struct { valA: Operator, valB: Operator },
-    jmp: JumpLabel,
-    je: JumpLabel,
+    jmp: Label,
+    je: Label,
     print: u8,
 };
 
-pub const JumpLabel = union(enum) {
+pub const Label = union(enum) {
     value: u32,
     label: []const u8,
 };
 
 pub const Operator = union(enum) {
     register: u8,
-    value: i32,
+    value: Label,
 };
 
 pub const Cpu = struct {
@@ -34,10 +34,7 @@ pub const Cpu = struct {
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
             .add => |data| {
-                const valB = switch (data.valB) {
-                    .register => |regIndex| self.registers[regIndex],
-                    .value => |value| value,
-                };
+                const valB = self.parseOperator(data.valB);
 
                 const addition = @addWithOverflow(self.registers[data.regA], valB);
                 self.registers[data.regA] = addition[0];
@@ -47,10 +44,7 @@ pub const Cpu = struct {
                 self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
             },
             .sub => |data| {
-                const valB = switch (data.valB) {
-                    .register => |regIndex| self.registers[regIndex],
-                    .value => |value| value,
-                };
+                const valB = self.parseOperator(data.valB);
 
                 const subtraction = @subWithOverflow(self.registers[data.regA], valB);
 
@@ -61,10 +55,7 @@ pub const Cpu = struct {
                 self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
             },
             .mov => |data| {
-                const valB = switch (data.valB) {
-                    .register => |regIndex| self.registers[regIndex],
-                    .value => |value| value,
-                };
+                const valB = self.parseOperator(data.valB);
 
                 self.registers[data.regA] = valB;
 
@@ -72,15 +63,9 @@ pub const Cpu = struct {
                 self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
             },
             .cmp => |data| {
-                const valB = switch (data.valB) {
-                    .register => |regIndex| self.registers[regIndex],
-                    .value => |value| value,
-                };
+                const valB = self.parseOperator(data.valB);
 
-                const valA = switch (data.valA) {
-                    .register => |regIndex| self.registers[regIndex],
-                    .value => |value| value,
-                };
+                const valA = self.parseOperator(data.valA);
 
                 const subtraction = valA - valB;
 
@@ -88,11 +73,22 @@ pub const Cpu = struct {
                 self.flags[1] = if (subtraction < 0) 1 else 0;
             },
             .print => |reg| {
+                // std.debug.print("\nRegister value: {d}\n", .{self.registers[reg]});
                 const char: u8 = @intCast(self.registers[reg]);
                 std.debug.print("{c}", .{char});
             },
             else => {},
         }
+    }
+
+    fn parseOperator(self: *Cpu, op: Operator) i32 {
+        return switch (op) {
+            .register => |regIndex| self.registers[regIndex],
+            .value => |value| smth: {
+                const intVal: i32 = @bitCast(value.value);
+                break :smth intVal;
+            },
+        };
     }
 
     pub fn printRegisters(self: *Cpu) void {
@@ -124,7 +120,7 @@ pub const Cpu = struct {
                     else => {
                         try self.executeInstruction(instruction);
                         // if (instruction != .cmp) {
-                        //     cpu.printRegisters();
+                        //     self.printRegisters();
                         //     std.debug.print("\n", .{});
                         // }
                     },
