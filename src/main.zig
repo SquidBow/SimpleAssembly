@@ -113,24 +113,25 @@ pub fn main() !void {
                         const rest = tokens.rest();
                         var inner: []const u8 = "";
                         if (rest.len > 0) {
-                            inner = rest[0 .. rest.len];
+                            inner = rest[0..rest.len];
                         } else {
                             inner = rest;
                         }
-                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[1..], " ", inner }) catch {
+                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[0..], " ", inner }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
+                        const clean = std.mem.trim(u8, fullString, "\"");
 
                         defer allocator.free(fullString);
 
                         const ramPointerForVar: u32 = @intCast(ramPointer);
-                        @memcpy(ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
-                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len - 1 }) catch {
+                        @memcpy(ram[ramPointerForVar .. ramPointerForVar + clean.len], clean);
+                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = clean.len }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
-                        ramPointer += @intCast(fullString.len - 1);
+                        ramPointer += @intCast(clean.len);
                     }
                 },
             }
