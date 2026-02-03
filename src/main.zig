@@ -110,6 +110,11 @@ pub fn main() !void {
 
                         try writeDataToRam(&ram, &dataTable, dataType, data, token, &ramPointer);
                     } else {
+                        if (typeOrString[0] != '\"') {
+                            std.debug.print("Unable to identify type of the variable: {s}\n", .{typeOrString});
+                            return error.InvalidTypeToken;
+                        }
+
                         const rest = tokens.rest();
                         var inner: []const u8 = "";
                         if (rest.len > 0) {
@@ -117,21 +122,25 @@ pub fn main() !void {
                         } else {
                             inner = rest;
                         }
-                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[0..], " ", inner }) catch {
+                        const lastDoubleQuote = std.mem.lastIndexOf(u8, rest, "\"") orelse {
+                            std.debug.print("Cannot find the end of the string\n", .{});
+                            return error.InvalidString;
+                        };
+
+                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[1..], " ", inner[0..lastDoubleQuote] }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
-                        const clean = std.mem.trim(u8, fullString, "\"");
 
                         defer allocator.free(fullString);
 
                         const ramPointerForVar: u32 = @intCast(ramPointer);
-                        @memcpy(ram[ramPointerForVar .. ramPointerForVar + clean.len], clean);
-                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = clean.len }) catch {
+                        @memcpy(ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
+                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
-                        ramPointer += @intCast(clean.len);
+                        ramPointer += @intCast(fullString.len);
                     }
                 },
             }
