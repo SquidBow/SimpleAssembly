@@ -7,7 +7,7 @@ pub const Instructions = union(enum) {
     cmp: struct { valA: Operator, valB: Operator },
     jmp: Label,
     je: Label,
-    print: u8,
+    print: Operator,
 };
 
 pub const Label = union(enum) {
@@ -65,12 +65,26 @@ pub const Cpu = struct {
                 self.flags[0] = if (subtraction == 0) 1 else 0;
                 self.flags[1] = if (subtraction < 0) 1 else 0;
             },
-            .print => |reg| {
-                // std.debug.print("\nRegister value: {d}\n", .{self.registers[reg]});
+            .print => |operator| {
+                self.print(operator);
+            },
+            else => {},
+        }
+    }
+
+    fn print(self: *Cpu, op: Operator) void {
+        switch (op) {
+            .register => |reg| {
                 const char: u8 = @intCast(self.registers[reg]);
                 std.debug.print("{c}", .{char});
             },
-            else => {},
+            .value => |label| switch (label) {
+                .value => |val| {
+                    const char: u8 = @intCast(val);
+                    std.debug.print("{c}", .{char});
+                },
+                .label => |string| std.debug.print("{s}", .{string}),
+            },
         }
     }
 

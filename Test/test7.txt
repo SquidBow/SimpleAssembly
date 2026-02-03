@@ -1,0 +1,6 @@
+.data
+string "Hello"
+
+.code
+mov r0 33
+print string
