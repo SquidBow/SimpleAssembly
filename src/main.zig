@@ -79,13 +79,13 @@ pub fn main() !void {
             continue;
         }
 
-        if (section == .code) instructionCount += 1;
         var tokens = std.mem.tokenizeSequence(u8, line, " ");
 
         if (tokens.next()) |token| {
             switch (section) {
                 .none => continue,
                 .code => {
+                    instructionCount += 1;
                     const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
 
                     const instruction = switchInstructionCode(instrCode, &tokens) catch {
@@ -106,18 +106,18 @@ pub fn main() !void {
                     };
 
                     if (std.meta.stringToEnum(DataTypes, typeOrString)) |dataType| {
-                        const data = tokens.next() orelse return error.InvalidDataToken;
+                        const data = tokens.next() orelse "0";
 
                         try writeDataToRam(&ram, &dataTable, dataType, data, token, &ramPointer);
                     } else {
                         const rest = tokens.rest();
                         var inner: []const u8 = "";
                         if (rest.len > 0) {
-                            inner = rest[0 .. rest.len - 1];
+                            inner = rest[0 .. rest.len];
                         } else {
                             inner = rest;
                         }
-                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[1..], inner }) catch {
+                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[1..], " ", inner }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
@@ -126,11 +126,11 @@ pub fn main() !void {
 
                         const ramPointerForVar: u32 = @intCast(ramPointer);
                         @memcpy(ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
-                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len - 2 }) catch {
+                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len - 1 }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
-                        ramPointer += @intCast(fullString.len - 2);
+                        ramPointer += @intCast(fullString.len - 1);
                     }
                 },
             }
@@ -187,7 +187,7 @@ pub fn main() !void {
                         return error.InvalidReplacement;
                     };
                     target.*.value = switch (variable.dataType) {
-                        .string => root.Label{ .label = ram[variable.pointer .. variable.pointer + variable.len + 1] },
+                        .string => root.Label{ .label = ram[variable.pointer .. variable.pointer + variable.len] },
                         else => root.Label{
                             .value = getVariableUInt(&ram, variable),
                         },
