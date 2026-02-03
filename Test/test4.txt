@@ -1,0 +1,28 @@
+mov r0 72
+print r0
+mov r0 101
+print r0
+mov r0 108
+print r0
+mov r0 108
+print r0
+mov r0 111
+print r0
+mov r0 44
+print r0
+mov r0 32
+print r0
+mov r0 87
+print r0
+mov r0 111
+print r0
+mov r0 114
+print r0
+mov r0 108
+print r0
+mov r0 100
+print r0
+mov r0 33
+print r0
+mov r0 10
+print r0

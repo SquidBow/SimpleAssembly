@@ -1,0 +1,15 @@
+.data
+Start dw 32
+end dd 128
+
+.code
+mov r0 Start
+start:
+print r0
+add r0 1
+cmp r0 end
+je end
+jmp start
+end:
+mov r0 10
+print r0

@@ -21,15 +21,8 @@ pub const Operator = union(enum) {
 };
 
 pub const Cpu = struct {
-    registers: [4]i32,
-    flags: [3]u8,
-
-    pub fn init() Cpu {
-        return Cpu{
-            .registers = [_]i32{0} ** 4,
-            .flags = [_]u8{0} ** 3,
-        };
-    }
+    registers: [4]i32 = .{0} ** 4,
+    flags: [3]u8 = .{0} ** 3,
 
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
