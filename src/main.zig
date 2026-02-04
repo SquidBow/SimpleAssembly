@@ -7,19 +7,6 @@ const Section = enum {
     none,
 };
 
-const DataTypes = enum {
-    db,
-    dw,
-    dd,
-    string,
-};
-
-const Variable = struct {
-    pointer: u32,
-    dataType: DataTypes,
-    len: usize,
-};
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -37,25 +24,14 @@ pub fn main() !void {
     const code = try std.fs.cwd().readFileAlloc(allocator, args[1], maxSize);
     defer allocator.free(code);
 
-    var codeTable = std.StringHashMap(u32).init(allocator);
-    defer codeTable.deinit();
-    var dataTable = std.StringHashMap(Variable).init(allocator);
-    defer dataTable.deinit();
-
     var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
     defer instructions.deinit(allocator);
 
-    var ram: [1024]u8 = undefined;
-    // defer ;
+    // var ram: [1024]u8 = undefined;
     var ramPointer: usize = 0;
-
-    // std.debug.print("{s}", .{code});
-
     var section: Section = Section.none;
-
     var lines = std.mem.tokenizeSequence(u8, code, "\n");
-
-    var cpu = root.Cpu{};
+    var cpu = root.Cpu.init(allocator);
 
     var instructionCount: u32 = 0;
 
@@ -63,7 +39,7 @@ pub fn main() !void {
         if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
             continue;
         } else if (line[line.len - 1] == ':') {
-            try codeTable.put(line[0 .. line.len - 1], instructionCount);
+            try cpu.codeTable.put(line[0 .. line.len - 1], instructionCount);
             continue;
         } else if (line[0] == '.') {
             const stateString = line[1..];
@@ -105,10 +81,10 @@ pub fn main() !void {
                         return error.InvalidTypeToken;
                     };
 
-                    if (std.meta.stringToEnum(DataTypes, typeOrString)) |dataType| {
+                    if (std.meta.stringToEnum(root.DataTypes, typeOrString)) |dataType| {
                         const data = tokens.next() orelse "0";
 
-                        try writeDataToRam(&ram, &dataTable, dataType, data, token, &ramPointer);
+                        try writeDataToRam(&cpu.ram, &cpu.dataTable, dataType, data, token, &ramPointer);
                     } else {
                         if (typeOrString[0] != '\"') {
                             std.debug.print("Unable to identify type of the variable: {s}\n", .{typeOrString});
@@ -135,8 +111,8 @@ pub fn main() !void {
                         defer allocator.free(fullString);
 
                         const ramPointerForVar: u32 = @intCast(ramPointer);
-                        @memcpy(ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
-                        dataTable.put(token, .{ .dataType = DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len }) catch {
+                        @memcpy(cpu.ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
+                        cpu.dataTable.put(token, .{ .dataType = root.DataTypes.string, .pointer = ramPointerForVar, .len = fullString.len }) catch {
                             std.debug.print("Unable to add string to memory\n", .{});
                             return error.OutOfMemory;
                         };
@@ -150,56 +126,56 @@ pub fn main() !void {
     for (instructions.items) |*instruction| {
         switch (instruction.*) {
             .jmp => |*target| {
-                if (target.* == .label) target.* = root.Label{ .value = codeTable.get(target.*.label).? };
+                if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
             },
             .je => |*target| {
-                if (target.* == .label) target.* = root.Label{ .value = codeTable.get(target.*.label).? };
+                if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
             },
             .add => |*target| {
                 if (target.*.valB == .value and target.*.valB.value == .label) {
                     target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&ram, dataTable.get(target.*.valB.value.label).?),
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
                     };
                 }
             },
             .sub => |*target| {
                 if (target.*.valB == .value and target.*.valB.value == .label) {
                     target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&ram, dataTable.get(target.*.valB.value.label).?),
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
                     };
                 }
             },
             .mov => |*target| {
                 if (target.*.valB == .value and target.*.valB.value == .label) {
                     target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&ram, dataTable.get(target.*.valB.value.label).?),
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
                     };
                 }
             },
             .cmp => |*target| {
                 if (target.*.valA == .value and target.*.valA.value == .label) {
                     target.*.valA.value = root.Label{
-                        .value = getVariableUInt(&ram, dataTable.get(target.*.valA.value.label).?),
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.value.label).?),
                     };
                 }
 
                 if (target.*.valB == .value and target.*.valB.value == .label) {
                     // target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
                     target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&ram, dataTable.get(target.*.valB.value.label).?),
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
                     };
                 }
             },
             .print => |*target| {
                 if (target.* == .value and target.*.value == .label) {
-                    const variable: Variable = dataTable.get(target.*.value.label) orelse {
+                    const variable: root.Variable = cpu.dataTable.get(target.*.value.label) orelse {
                         std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.value.label});
                         return error.InvalidReplacement;
                     };
                     target.*.value = switch (variable.dataType) {
-                        .string => root.Label{ .label = ram[variable.pointer .. variable.pointer + variable.len] },
+                        .string => root.Label{ .label = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
                         else => root.Label{
-                            .value = getVariableUInt(&ram, variable),
+                            .value = getVariableUInt(&cpu.ram, variable),
                         },
                     };
                 }
@@ -210,6 +186,7 @@ pub fn main() !void {
 
     cpu.executeCode(instructions.items);
     // cpu.printRegisters();
+    cpu.deinit();
 }
 
 fn parseLabel(token: ?[]const u8) !root.Label {
@@ -234,7 +211,7 @@ fn parseOperator(op: ?[]const u8) !root.Operator {
 
 // fn getVariableString(ram: []const u8, variable: Variable) u32 {
 
-fn getVariableUInt(ram: []const u8, variable: Variable) u32 {
+fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     return switch (variable.dataType) {
         .db => std.mem.readInt(u8, ram[variable.pointer..][0..1], .little),
         .dw => std.mem.readInt(u16, ram[variable.pointer..][0..2], .little),
@@ -260,7 +237,7 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
     };
 }
 
-fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(Variable), dataType: DataTypes, data: []const u8, token: []const u8, ramPointer: *usize) !void {
+fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(root.Variable), dataType: root.DataTypes, data: []const u8, token: []const u8, ramPointer: *usize) !void {
     switch (dataType) {
         .db => {
             const value: u8 = std.fmt.parseInt(u8, data, 10) catch {
@@ -270,7 +247,7 @@ fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(Variable), dataType: 
             ram[ramPointer.*] = value;
 
             const ramPointerForVar: u32 = @intCast(ramPointer.*);
-            dataTable.put(token, Variable{ .dataType = DataTypes.db, .pointer = ramPointerForVar, .len = 0 }) catch {
+            dataTable.put(token, root.Variable{ .dataType = root.DataTypes.db, .pointer = ramPointerForVar, .len = 0 }) catch {
                 std.debug.print("Unable to put the value into the data table\n", .{});
                 return error.OutOfMemory;
             };
@@ -285,7 +262,7 @@ fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(Variable), dataType: 
             std.mem.writeInt(u16, ram[ramPointer.*..][0..2], value, .little);
 
             const ramPointerForVar: u32 = @intCast(ramPointer.*);
-            dataTable.put(token, Variable{ .dataType = DataTypes.dw, .pointer = ramPointerForVar, .len = 0 }) catch {
+            dataTable.put(token, root.Variable{ .dataType = root.DataTypes.dw, .pointer = ramPointerForVar, .len = 0 }) catch {
                 std.debug.print("Unable to put the value into the data table\n", .{});
                 return error.OutOfMemory;
             };
@@ -301,7 +278,7 @@ fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(Variable), dataType: 
             };
             std.mem.writeInt(u32, ram[ramPointer.*..][0..4], value, .little);
             const ramPointerForVar: u32 = @intCast(ramPointer.*);
-            dataTable.put(token, Variable{ .dataType = DataTypes.dd, .pointer = ramPointerForVar, .len = 0 }) catch {
+            dataTable.put(token, root.Variable{ .dataType = root.DataTypes.dd, .pointer = ramPointerForVar, .len = 0 }) catch {
                 std.debug.print("Unable to put the value into the data table\n", .{});
                 return error.OutOfMemory;
             };

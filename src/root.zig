@@ -20,9 +20,39 @@ pub const Operator = union(enum) {
     value: Label,
 };
 
+pub const DataTypes = enum {
+    db,
+    dw,
+    dd,
+    string,
+};
+
+pub const Variable = struct {
+    pointer: u32,
+    dataType: DataTypes,
+    len: usize,
+};
+
 pub const Cpu = struct {
     registers: [4]i32 = .{0} ** 4,
     flags: [3]u8 = .{0} ** 3,
+    ram: [1024]u8 = undefined,
+    dataTable: std.StringHashMap(Variable),
+    codeTable: std.StringHashMap(u32),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Cpu {
+        return Cpu{
+            .dataTable = std.StringHashMap(Variable).init(allocator),
+            .codeTable = std.StringHashMap(u32).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Cpu) void {
+        self.dataTable.deinit();
+        self.codeTable.deinit();
+    }
 
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
