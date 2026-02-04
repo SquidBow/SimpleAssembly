@@ -5,4 +5,5 @@ smth db 35
 .code
 mov r0 33
 print string
+# print smth
 print smth

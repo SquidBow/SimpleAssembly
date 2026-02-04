@@ -86,29 +86,17 @@ pub fn main() !void {
 
                         try writeDataToRam(&cpu.ram, &cpu.dataTable, dataType, data, token, &ramPointer);
                     } else {
-                        if (typeOrString[0] != '\"') {
-                            std.debug.print("Unable to identify type of the variable: {s}\n", .{typeOrString});
-                            return error.InvalidTypeToken;
-                        }
+                        const firstDoubleQuote = std.mem.indexOf(u8, line, "\"") orelse {
+                            std.debug.print("Cannot find the start of the string\n", .{});
+                            return error.InvalidString;
+                        };
 
-                        const rest = tokens.rest();
-                        var inner: []const u8 = "";
-                        if (rest.len > 0) {
-                            inner = rest[0..rest.len];
-                        } else {
-                            inner = rest;
-                        }
-                        const lastDoubleQuote = std.mem.lastIndexOf(u8, rest, "\"") orelse {
+                        const lastDoubleQuote = std.mem.lastIndexOf(u8, line, "\"") orelse {
                             std.debug.print("Cannot find the end of the string\n", .{});
                             return error.InvalidString;
                         };
 
-                        const fullString = std.mem.concat(allocator, u8, &.{ typeOrString[1..], " ", inner[0..lastDoubleQuote] }) catch {
-                            std.debug.print("Unable to add string to memory\n", .{});
-                            return error.OutOfMemory;
-                        };
-
-                        defer allocator.free(fullString);
+                        const fullString = line[firstDoubleQuote + 1 .. lastDoubleQuote];
 
                         const ramPointerForVar: u32 = @intCast(ramPointer);
                         @memcpy(cpu.ram[ramPointerForVar .. ramPointerForVar + fullString.len], fullString);
@@ -132,60 +120,55 @@ pub fn main() !void {
                 if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
             },
             .add => |*target| {
-                if (target.*.valB == .value and target.*.valB.value == .label) {
-                    target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
+                if (target.*.valB == .string) {
+                    target.*.valB = root.Operator{
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
                     };
                 }
             },
             .sub => |*target| {
-                if (target.*.valB == .value and target.*.valB.value == .label) {
-                    target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
+                if (target.*.valB == .string) {
+                    target.*.valB = root.Operator{
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
                     };
                 }
             },
             .mov => |*target| {
-                if (target.*.valB == .value and target.*.valB.value == .label) {
-                    target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
+                if (target.*.valB == .string) {
+                    target.*.valB = root.Operator{
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
                     };
                 }
             },
             .cmp => |*target| {
-                if (target.*.valA == .value and target.*.valA.value == .label) {
-                    target.*.valA.value = root.Label{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.value.label).?),
+                if (target.*.valA == .string) {
+                    target.*.valA = root.Operator{
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.string).?),
                     };
                 }
 
-                if (target.*.valB == .value and target.*.valB.value == .label) {
-                    // target.*.valB.value = root.Label{ .value = ram[dataTable.get(target.*.valB.value.label).?] };
-                    target.*.valB.value = root.Label{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.value.label).?),
+                if (target.*.valB == .string) {
+                    target.*.valB = root.Operator{
+                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
                     };
                 }
             },
             .print => |*target| {
-                if (target.* == .value and target.*.value == .label) {
-                    const variable: root.Variable = cpu.dataTable.get(target.*.value.label) orelse {
-                        std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.value.label});
+                if (target.* == .string) {
+                    const variable: root.Variable = cpu.dataTable.get(target.*.string) orelse {
+                        std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.string});
                         return error.InvalidReplacement;
                     };
-                    target.*.value = switch (variable.dataType) {
-                        .string => root.Label{ .label = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
-                        else => root.Label{
-                            .value = getVariableUInt(&cpu.ram, variable),
-                        },
+                    target.* = switch (variable.dataType) {
+                        .string => root.Operator{ .string = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
+                        else => root.Operator{ .value = getVariableUInt(&cpu.ram, variable) },
                     };
                 }
             },
-            // else => {},
         }
     }
 
     cpu.executeCode(instructions.items);
-    // cpu.printRegisters();
     cpu.deinit();
 }
 
@@ -201,21 +184,24 @@ fn parseLabel(token: ?[]const u8) !root.Label {
 
 fn parseOperator(op: ?[]const u8) !root.Operator {
     if (op) |operand| {
-        if (operand[0] == 'r') {
-            return root.Operator{ .register = try std.fmt.parseUnsigned(u8, operand[1..], 10) };
-        } else {
-            return root.Operator{ .value = try parseLabel(operand) };
+        if (std.fmt.parseInt(i32, operand, 10)) |value| {
+            return root.Operator{ .value = value };
+        } else |_| {
+            if (operand[0] == 'r') {
+                return root.Operator{ .register = std.fmt.parseInt(u8, operand[1..], 10) catch {
+                    return root.Operator{ .string = operand };
+                } };
+            } else {
+                return root.Operator{ .string = operand };
+            }
         }
     } else return error.MissingOperand;
 }
-
-// fn getVariableString(ram: []const u8, variable: Variable) u32 {
-
-fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
+fn getVariableUInt(ram: []const u8, variable: root.Variable) i32 {
     return switch (variable.dataType) {
-        .db => std.mem.readInt(u8, ram[variable.pointer..][0..1], .little),
-        .dw => std.mem.readInt(u16, ram[variable.pointer..][0..2], .little),
-        .dd => std.mem.readInt(u32, ram[variable.pointer..][0..4], .little),
+        .db => std.mem.readInt(i8, ram[variable.pointer..][0..1], .little),
+        .dw => std.mem.readInt(i16, ram[variable.pointer..][0..2], .little),
+        .dd => std.mem.readInt(i32, ram[variable.pointer..][0..4], .little),
         else => 0,
     };
 }

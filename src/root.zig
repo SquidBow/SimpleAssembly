@@ -17,7 +17,8 @@ pub const Label = union(enum) {
 
 pub const Operator = union(enum) {
     register: u8,
-    value: Label,
+    value: i32,
+    string: []const u8,
 };
 
 pub const DataTypes = enum {
@@ -108,23 +109,19 @@ pub const Cpu = struct {
                 const char: u8 = @intCast(self.registers[reg]);
                 std.debug.print("{c}", .{char});
             },
-            .value => |label| switch (label) {
-                .value => |val| {
-                    const char: u8 = @intCast(val);
-                    std.debug.print("{c}", .{char});
-                },
-                .label => |string| std.debug.print("{s}", .{string}),
+            .value => |value| {
+                const char: u8 = @intCast(value);
+                std.debug.print("{c}", .{char});
             },
+            .string => |string| std.debug.print("{s}", .{string}),
         }
     }
 
     fn parseOperator(self: *Cpu, op: Operator) i32 {
         return switch (op) {
             .register => |regIndex| self.registers[regIndex],
-            .value => |value| smth: {
-                const intVal: i32 = @bitCast(value.value);
-                break :smth intVal;
-            },
+            .value => |value| value,
+            else => 0,
         };
     }
 
