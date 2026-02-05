@@ -119,56 +119,60 @@ pub fn main() !void {
             .je => |*target| {
                 if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
             },
-            .add => |*target| {
-                if (target.*.valB == .string) {
-                    target.*.valB = root.Operator{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-                    };
-                }
-            },
-            .sub => |*target| {
-                if (target.*.valB == .string) {
-                    target.*.valB = root.Operator{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-                    };
-                }
-            },
-            .mov => |*target| {
-                if (target.*.valB == .string) {
-                    target.*.valB = root.Operator{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-                    };
-                }
-            },
-            .cmp => |*target| {
-                if (target.*.valA == .string) {
-                    target.*.valA = root.Operator{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.string).?),
-                    };
-                }
+            else => {},
+            // .add => |*target| {
+            //     if (target.*.valB == .string) {
+            //         target.*.valB = root.Operator{
+            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
+            //         };
+            //     }
+            // },
+            // .sub => |*target| {
+            //     if (target.*.valB == .string) {
+            //         target.*.valB = root.Operator{
+            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
+            //         };
+            //     }
+            // },
+            // .mov => |*target| {
+            //     if (target.*.valB == .string) {
+            //         target.*.valB = root.Operator{
+            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
+            //         };
+            //     }
+            // },
+            // .cmp => |*target| {
+            //     if (target.*.valA == .string) {
+            //         target.*.valA = root.Operator{
+            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.string).?),
+            //         };
+            //     }
 
-                if (target.*.valB == .string) {
-                    target.*.valB = root.Operator{
-                        .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-                    };
-                }
-            },
-            .print => |*target| {
-                if (target.* == .string) {
-                    const variable: root.Variable = cpu.dataTable.get(target.*.string) orelse {
-                        std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.string});
-                        return error.InvalidReplacement;
-                    };
-                    target.* = switch (variable.dataType) {
-                        .string => root.Operator{ .string = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
-                        else => root.Operator{ .value = getVariableUInt(&cpu.ram, variable) },
-                    };
-                }
-            },
+            //     if (target.*.valB == .string) {
+            //         target.*.valB = root.Operator{
+            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
+            //         };
+            //     }
+            // },
+            // .print => |*target| {
+            //     if (target.* == .string) {
+            //         const variable: root.Variable = cpu.dataTable.get(target.*.string) orelse {
+            //             std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.string});
+            //             return error.InvalidReplacement;
+            //         };
+            //         target.* = switch (variable.dataType) {
+            //             .string => root.Operator{ .string = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
+            //             else => root.Operator{ .value = getVariableUInt(&cpu.ram, variable) },
+            //         };
+            //     }
+            // },
         }
     }
 
-    cpu.executeCode(instructions.items);
+    cpu.executeCode(instructions.items) catch {
+        std.debug.print("Failed while executing code", .{});
+        return error.RuntimeError;
+    };
     cpu.deinit();
 }
 
@@ -184,7 +188,7 @@ fn parseLabel(token: ?[]const u8) !root.Label {
 
 fn parseOperator(op: ?[]const u8) !root.Operator {
     if (op) |operand| {
-        if (std.fmt.parseInt(i32, operand, 10)) |value| {
+        if (std.fmt.parseInt(u32, operand, 10)) |value| {
             return root.Operator{ .value = value };
         } else |_| {
             if (operand[0] == 'r') {
@@ -197,11 +201,11 @@ fn parseOperator(op: ?[]const u8) !root.Operator {
         }
     } else return error.MissingOperand;
 }
-fn getVariableUInt(ram: []const u8, variable: root.Variable) i32 {
+fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     return switch (variable.dataType) {
-        .db => std.mem.readInt(i8, ram[variable.pointer..][0..1], .little),
-        .dw => std.mem.readInt(i16, ram[variable.pointer..][0..2], .little),
-        .dd => std.mem.readInt(i32, ram[variable.pointer..][0..4], .little),
+        .db => std.mem.readInt(u8, ram[variable.pointer..][0..1], .little),
+        .dw => std.mem.readInt(u16, ram[variable.pointer..][0..2], .little),
+        .dd => std.mem.readInt(u32, ram[variable.pointer..][0..4], .little),
         else => 0,
     };
 }
@@ -254,8 +258,6 @@ fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(root.Variable), dataT
             };
 
             ramPointer.* += 2;
-
-            // std.debug.print("Added: {d} to memory\n", .{value});
         },
         .dd => {
             const value: u32 = std.fmt.parseInt(u32, data, 10) catch {

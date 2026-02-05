@@ -17,7 +17,7 @@ pub const Label = union(enum) {
 
 pub const Operator = union(enum) {
     register: u8,
-    value: i32,
+    value: u32,
     string: []const u8,
 };
 
@@ -35,8 +35,8 @@ pub const Variable = struct {
 };
 
 pub const Cpu = struct {
-    registers: [4]i32 = .{0} ** 4,
-    flags: [3]u8 = .{0} ** 3,
+    registers: [4]u32 = .{0} ** 4,
+    flags: [3]u8 = .{0} ** 3, //0.Zero, 1.Sign, 2.Carry
     ram: [1024]u8 = undefined,
     dataTable: std.StringHashMap(Variable),
     codeTable: std.StringHashMap(u32),
@@ -58,17 +58,17 @@ pub const Cpu = struct {
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
             .add => |data| {
-                const valB = self.parseOperator(data.valB);
+                const valB = try self.parseOperator(data.valB);
 
                 const addition = @addWithOverflow(self.registers[data.regA], valB);
                 self.registers[data.regA] = addition[0];
                 self.flags[2] = addition[1];
 
                 self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .sub => |data| {
-                const valB = self.parseOperator(data.valB);
+                const valB = try self.parseOperator(data.valB);
 
                 const subtraction = @subWithOverflow(self.registers[data.regA], valB);
 
@@ -76,25 +76,22 @@ pub const Cpu = struct {
                 self.flags[2] = subtraction[1];
 
                 self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .mov => |data| {
-                const valB = self.parseOperator(data.valB);
+                const valB = try self.parseOperator(data.valB);
 
                 self.registers[data.regA] = valB;
 
                 self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (self.registers[data.regA] < 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .cmp => |data| {
-                const valB = self.parseOperator(data.valB);
+                const valB = try self.parseOperator(data.valB);
+                const valA = try self.parseOperator(data.valA);
 
-                const valA = self.parseOperator(data.valA);
-
-                const subtraction = valA - valB;
-
-                self.flags[0] = if (subtraction == 0) 1 else 0;
-                self.flags[1] = if (subtraction < 0) 1 else 0;
+                self.flags[0] = if (valA == valB) 1 else 0;
+                self.flags[1] = if (valA < valB) 1 else 0;
             },
             .print => |operator| {
                 self.print(operator);
@@ -113,15 +110,42 @@ pub const Cpu = struct {
                 const char: u8 = @intCast(value);
                 std.debug.print("{c}", .{char});
             },
-            .string => |string| std.debug.print("{s}", .{string}),
+            .string => |string| if (self.dataTable.get(string)) |variable| {
+                return switch (variable.dataType) {
+                    .db => {
+                        const value = std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little);
+                        std.debug.print("{c}", .{value});
+                    },
+                    .dw => {
+                        const value = std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little);
+                        const char: u8 = @intCast(value);
+                        std.debug.print("{c}", .{char});
+                    },
+                    .dd => {
+                        const value = std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little);
+                        const char: u8 = @intCast(value);
+                        std.debug.print("{c}", .{char});
+                    },
+                    .string => {
+                        std.debug.print("{s}", .{self.ram[variable.pointer .. variable.pointer + variable.len]});
+                    },
+                };
+            } else std.debug.print("{s}", .{string}),
         }
     }
 
-    fn parseOperator(self: *Cpu, op: Operator) i32 {
+    fn parseOperator(self: *Cpu, op: Operator) !u32 {
         return switch (op) {
             .register => |regIndex| self.registers[regIndex],
             .value => |value| value,
-            else => 0,
+            .string => |string| if (self.dataTable.get(string)) |variable| {
+                return switch (variable.dataType) {
+                    .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
+                    .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
+                    .dd => std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little),
+                    .string => error.InvalidDataType,
+                };
+            } else return error.InvalidValue,
         };
     }
 
@@ -131,7 +155,7 @@ pub const Cpu = struct {
         }
     }
 
-    pub fn executeCode(self: *Cpu, instructions: []Instructions) void {
+    pub fn executeCode(self: *Cpu, instructions: []Instructions) !void {
         {
             var i: u32 = 0;
 
@@ -153,10 +177,6 @@ pub const Cpu = struct {
                     },
                     else => {
                         try self.executeInstruction(instruction);
-                        // if (instruction != .cmp) {
-                        //     self.printRegisters();
-                        //     std.debug.print("\n", .{});
-                        // }
                     },
                 }
             }

@@ -1,6 +1,6 @@
 .data
-string "Hello WORLD!"
-smth db 35
+string "Hello  WORLD!"
+smth db 131
 
 .code
 mov r0 33
