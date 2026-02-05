@@ -27,7 +27,6 @@ pub fn main() !void {
     var instructions = try std.ArrayList(root.Instructions).initCapacity(allocator, 0);
     defer instructions.deinit(allocator);
 
-    // var ram: [1024]u8 = undefined;
     var ramPointer: usize = 0;
     var section: Section = Section.none;
     var lines = std.mem.tokenizeSequence(u8, code, "\n");
@@ -64,7 +63,7 @@ pub fn main() !void {
                     instructionCount += 1;
                     const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
 
-                    const instruction = switchInstructionCode(instrCode, &tokens) catch {
+                    const instruction = switchInstructionCode(instrCode, &tokens, line) catch {
                         std.debug.print("Failed to parse instruction: {}\n", .{instrCode});
                         return error.InvalidInstruction;
                     };
@@ -128,20 +127,18 @@ fn parseLabel(token: ?[]const u8) !root.Label {
     } else return error.InvalidLabel;
 }
 
-fn parseOperator(op: ?[]const u8) !root.Operator {
-    if (op) |operand| {
-        if (std.fmt.parseInt(u32, operand, 10)) |value| {
-            return root.Operator{ .value = value };
-        } else |_| {
-            if (operand[0] == 'r') {
-                return root.Operator{ .register = std.fmt.parseInt(u8, operand[1..], 10) catch {
-                    return root.Operator{ .string = operand };
-                } };
-            } else {
+fn parseOperator(operand: []const u8) root.Operator {
+    if (std.fmt.parseInt(u32, operand, 10)) |value| {
+        return root.Operator{ .value = value };
+    } else |_| {
+        if (operand[0] == 'r') {
+            return root.Operator{ .register = std.fmt.parseInt(u8, operand[1..], 10) catch {
                 return root.Operator{ .string = operand };
-            }
+            } };
+        } else {
+            return root.Operator{ .string = operand };
         }
-    } else return error.MissingOperand;
+    }
 }
 fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     return switch (variable.dataType) {
@@ -152,20 +149,39 @@ fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     };
 }
 
-fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence)) !root.Instructions {
+fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence), line: []const u8) !root.Instructions {
     return switch (instrCode) {
-        .add => root.Instructions{ .add = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = try parseOperator(tokens.next()) } },
-        .sub => root.Instructions{ .sub = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = try parseOperator(tokens.next()) } },
-        .mov => root.Instructions{ .mov = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = try parseOperator(tokens.next()) } },
-        .cmp => root.Instructions{ .cmp = .{ .valA = try parseOperator(tokens.next().?), .valB = try parseOperator(tokens.next().?) } },
+        .add => root.Instructions{ .add = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
+        .sub => root.Instructions{ .sub = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
+        .mov => root.Instructions{ .mov = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
+        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperator(tokens.next().?), .valB = parseOperator(tokens.next().?) } },
         .jmp => root.Instructions{
             .jmp = try parseLabel(tokens.next()),
         },
         .je => root.Instructions{
             .je = try parseLabel(tokens.next()),
         },
-        .print => root.Instructions{ .print = try parseOperator(tokens.next()) },
-        // try std.fmt.parseInt(u8, tokens.next().?[1..], 10) },
+        .print => root.Instructions{
+            .print = isntr: {
+                const token = tokens.next() orelse return error.TokenNotFound;
+                if (token[0] == '\"') {
+                    const firstDoubleQuote = std.mem.indexOf(u8, line, "\"") orelse {
+                        std.debug.print("Cannot find the start of the string\n", .{});
+                        return error.InvalidString;
+                    };
+
+                    const lastDoubleQuote = std.mem.lastIndexOf(u8, line, "\"") orelse {
+                        std.debug.print("Cannot find the end of the string\n", .{});
+                        return error.InvalidString;
+                    };
+
+                    break :isntr parseOperator(line[firstDoubleQuote + 1 .. lastDoubleQuote]);
+                    // const fullString = line[firstDoubleQuote + 1 .. lastDoubleQuote];
+                } else {
+                    break :isntr parseOperator(token);
+                }
+            },
+        },
     };
 }
 
