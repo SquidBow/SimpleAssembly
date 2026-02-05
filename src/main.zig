@@ -111,64 +111,6 @@ pub fn main() !void {
         }
     }
 
-    for (instructions.items) |*instruction| {
-        switch (instruction.*) {
-            .jmp => |*target| {
-                if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
-            },
-            .je => |*target| {
-                if (target.* == .label) target.* = root.Label{ .value = cpu.codeTable.get(target.*.label).? };
-            },
-            else => {},
-            // .add => |*target| {
-            //     if (target.*.valB == .string) {
-            //         target.*.valB = root.Operator{
-            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-            //         };
-            //     }
-            // },
-            // .sub => |*target| {
-            //     if (target.*.valB == .string) {
-            //         target.*.valB = root.Operator{
-            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-            //         };
-            //     }
-            // },
-            // .mov => |*target| {
-            //     if (target.*.valB == .string) {
-            //         target.*.valB = root.Operator{
-            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-            //         };
-            //     }
-            // },
-            // .cmp => |*target| {
-            //     if (target.*.valA == .string) {
-            //         target.*.valA = root.Operator{
-            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valA.string).?),
-            //         };
-            //     }
-
-            //     if (target.*.valB == .string) {
-            //         target.*.valB = root.Operator{
-            //             .value = getVariableUInt(&cpu.ram, cpu.dataTable.get(target.*.valB.string).?),
-            //         };
-            //     }
-            // },
-            // .print => |*target| {
-            //     if (target.* == .string) {
-            //         const variable: root.Variable = cpu.dataTable.get(target.*.string) orelse {
-            //             std.debug.print("Unable to find replacement for value: {s}\n", .{target.*.string});
-            //             return error.InvalidReplacement;
-            //         };
-            //         target.* = switch (variable.dataType) {
-            //             .string => root.Operator{ .string = cpu.ram[variable.pointer .. variable.pointer + variable.len] },
-            //             else => root.Operator{ .value = getVariableUInt(&cpu.ram, variable) },
-            //         };
-            //     }
-            // },
-        }
-    }
-
     cpu.executeCode(instructions.items) catch {
         std.debug.print("Failed while executing code", .{});
         return error.RuntimeError;

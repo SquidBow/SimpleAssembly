@@ -165,13 +165,19 @@ pub const Cpu = struct {
                 const instruction = instructions[i];
 
                 switch (instruction) {
-                    .jmp => |line| {
-                        i = line.value;
+                    .jmp => |label| {
+                        i = self.parseLabel(label) catch {
+                            std.debug.print("Unable to parse the label", .{});
+                            return;
+                        };
                         i -= 1;
                     },
-                    .je => |line| {
+                    .je => |label| {
                         if (self.flags[0] == 1) {
-                            i = line.value;
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label", .{});
+                                return;
+                            };
                             i -= 1;
                         }
                     },
@@ -181,6 +187,13 @@ pub const Cpu = struct {
                 }
             }
         }
+    }
+
+    fn parseLabel(self: *Cpu, label: Label) !u32 {
+        return switch (label) {
+            .value => |value| value,
+            .label => |string| self.codeTable.get(string) orelse error.InvalidLabel,
+        };
     }
 };
 
