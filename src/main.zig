@@ -74,7 +74,7 @@ pub fn main() !void {
                     };
                 },
                 .data => {
-                    if (token[0] == '\"') {
+                    if (token[0] == '\"' or token[0] == 'r') {
                         return error.InvalidNameForAVariable;
                     }
 
@@ -151,7 +151,7 @@ fn parseOperator(operand: []const u8) !root.Operator {
     } else |_| {
         if (operand[0] == 'r') {
             return root.Operator{ .register = std.fmt.parseInt(u8, operand[1..], 10) catch {
-                return root.Operator{ .string = operand };
+                return root.Operator{ .label = operand };
             } };
         } else {
             return root.Operator{ .label = operand };
@@ -172,15 +172,15 @@ fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
 
 fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence), line: []const u8) !root.Instructions {
     return switch (instrCode) {
-        .add => root.Instructions{ .add = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
-        .sub => root.Instructions{ .sub = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
-        .mov => root.Instructions{ .mov = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
-        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperator(tokens.next().?) catch return error.UnableToParseOperand, .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
+        .add => root.Instructions{ .add = .{ .valA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .sub => root.Instructions{ .sub = .{ .valA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .mov => root.Instructions{ .mov = .{ .valA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperator(tokens.next().?) catch return error.UnableToParseOperand, .valB = parseOperator(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
         .jmp => root.Instructions{
-            .jmp = try parseLabel(tokens.rest()),
+            .jmp = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
         },
         .je => root.Instructions{
-            .je = try parseLabel(tokens.rest()),
+            .je = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
         },
         .print => root.Instructions{
             .print = isntr: {
@@ -204,6 +204,7 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
                 }
             },
         },
+        .write => root.Instructions{ .write = .{ .valA = parseOperator(tokens.next().?) catch return error.UnableToParseOperand, .valB = parseOperator(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
     };
 }
 
@@ -252,6 +253,6 @@ fn writeDataToRam(ram: []u8, dataTable: *std.StringHashMap(root.Variable), dataT
             };
             ramPointer.* += 4;
         },
-        else => {},
+        .string => return error.InvalidStringDefenition,
     }
 }

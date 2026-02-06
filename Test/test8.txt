@@ -1,0 +1,10 @@
+.data
+value1 db 35
+value2 db 37
+
+.code
+print value1
+# print value2
+write value1 value2
+# print 36
+print value1

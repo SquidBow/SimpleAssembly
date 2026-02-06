@@ -1,13 +1,14 @@
 const std = @import("std");
 
 pub const Instructions = union(enum) {
-    add: struct { regA: u8, valB: Operator },
-    sub: struct { regA: u8, valB: Operator },
-    mov: struct { regA: u8, valB: Operator },
+    add: struct { valA: u8, valB: Operator },
+    sub: struct { valA: u8, valB: Operator },
+    mov: struct { valA: u8, valB: Operator },
     cmp: struct { valA: Operator, valB: Operator },
     jmp: Label,
     je: Label,
     print: Operator,
+    write: struct { valA: Operator, valB: Operator },
 };
 
 pub const Label = union(enum) {
@@ -61,31 +62,31 @@ pub const Cpu = struct {
             .add => |data| {
                 const valB = try self.parseOperatorValue(data.valB);
 
-                const addition = @addWithOverflow(self.registers[data.regA], valB);
-                self.registers[data.regA] = addition[0];
+                const addition = @addWithOverflow(self.registers[data.valA], valB);
+                self.registers[data.valA] = addition[0];
                 self.flags[2] = addition[1];
 
-                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
             },
             .sub => |data| {
                 const valB = try self.parseOperatorValue(data.valB);
 
-                const subtraction = @subWithOverflow(self.registers[data.regA], valB);
+                const subtraction = @subWithOverflow(self.registers[data.valA], valB);
 
-                self.registers[data.regA] = subtraction[0];
+                self.registers[data.valA] = subtraction[0];
                 self.flags[2] = subtraction[1];
 
-                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
             },
             .mov => |data| {
                 const valB = try self.parseOperatorValue(data.valB);
 
-                self.registers[data.regA] = valB;
+                self.registers[data.valA] = valB;
 
-                self.flags[0] = if (self.registers[data.regA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
             },
             .cmp => |data| {
                 const valB = try self.parseOperatorValue(data.valB);
@@ -95,13 +96,22 @@ pub const Cpu = struct {
                 self.flags[1] = if (valA < valB) 1 else 0;
             },
             .print => |operator| {
-                self.print(operator);
+                self.print(operator) catch {
+                    // std.debug.print("Failed to print: {any}\n", .{operator});
+                    return error.UnableToPrintOperator;
+                };
+            },
+            .write => |data| {
+                self.WriteToOpearator(data.valA, data.valB) catch {
+                    std.debug.print("Failed to write to ram", .{});
+                    return error.FailedToWriteToRam;
+                };
             },
             else => {},
         }
     }
 
-    fn print(self: *Cpu, op: Operator) void {
+    fn print(self: *Cpu, op: Operator) !void {
         switch (op) {
             .register => |reg| {
                 const char: u8 = @intCast(self.registers[reg]);
@@ -132,7 +142,10 @@ pub const Cpu = struct {
                         std.debug.print("{s}", .{self.ram[variable.pointer .. variable.pointer + variable.len]});
                     },
                 };
-            } else std.debug.print("{s}", .{label}),
+            } else {
+                std.debug.print("Vairable: {s} doesn't exist\n", .{label});
+                return error.InvalidVairableName;
+            },
         }
     }
 
@@ -141,31 +154,90 @@ pub const Cpu = struct {
             .register => |regIndex| self.registers[regIndex],
             .value => |value| value,
             .string => error.InvalidDataType,
-            .label => |string| if (self.dataTable.get(string)) |variable| {
+            .label => |label| if (self.dataTable.get(label)) |variable| {
                 return switch (variable.dataType) {
                     .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
                     .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
                     .dd => std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little),
                     .string => error.InvalidDataType,
                 };
-            } else return error.InvalidValue,
+            } else return error.InvalidVairableName,
         };
     }
 
-    // fn WriteToOpearator(self: *Cpu, write: Operator, read: Operator) !void {
-    //     switch (write) {
-    //         .register => |regIndex| self.registers[regIndex] = self.parseOperatorValue(read),
-    //         .value => |value| value,
-    //         .string => |string| if (self.dataTable.get(string)) |variable| {
-    //             return switch (variable.dataType) {
-    //                 .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
-    //                 .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
-    //                 .dd => std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little),
-    //                 .string => error.InvalidDataType,
-    //             };
-    //         } else return error.InvalidValue,
-    //     }
-    // }
+    fn WriteToOpearator(self: *Cpu, write: Operator, read: Operator) !void {
+        switch (write) {
+            .register => |regIndex| {
+                self.registers[regIndex] = try self.parseOperatorValue(read);
+            },
+            .value => |value| {
+                self.WriteToRam(read, value) catch {
+                    std.debug.print("Failed to write to ram", .{});
+                    return error.FailedToWriteToRam;
+                };
+            },
+            .label => |label| if (self.dataTable.get(label)) |variable| {
+                self.WriteToRam(read, variable.pointer) catch {
+                    std.debug.print("Failed to write to ram", .{});
+                    return error.FailedToWriteToRam;
+                };
+            } else return error.InvalidVairableName,
+            .string => return error.CantWriteToAString,
+        }
+    }
+
+    fn WriteToRam(self: *Cpu, operator: Operator, ramPointer: usize) !void {
+        switch (operator) {
+            .register => |reg| {
+                const value = self.registers[reg];
+
+                if (value < std.math.maxInt(u8)) {
+                    self.ram[ramPointer] = @as(u8, @intCast(value));
+                } else if (value < std.math.maxInt(u16)) {
+                    std.mem.writeInt(u16, self.ram[ramPointer..][0..2], @as(u16, @intCast(value)), .little);
+                } else {
+                    std.mem.writeInt(u32, self.ram[ramPointer..][0..4], value, .little);
+                }
+            },
+            .value => |value| {
+                if (value < std.math.maxInt(u8)) {
+                    self.ram[ramPointer] = @as(u8, @intCast(value));
+                } else if (value < std.math.maxInt(u16)) {
+                    std.mem.writeInt(u16, self.ram[ramPointer..][0..2], @as(u16, @intCast(value)), .little);
+                } else if (value < std.math.maxInt(u32)) {
+                    std.mem.writeInt(u32, self.ram[ramPointer..][0..4], value, .little);
+                } else return error.NumberIsTooBig;
+            },
+            .string => |string| {
+                @memcpy(self.ram[ramPointer .. ramPointer + string.len], string);
+            },
+            .label => |label| {
+                if (self.dataTable.get(label)) |variable| {
+                    switch (variable.dataType) {
+                        .db => {
+                            const value: u8 = std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little);
+                            // std.debug.print("\n\nValue: {}\n\n", .{value});
+                            self.ram[ramPointer] = value;
+                            // const value2: u8 = self.ram[ramPointer];
+                            // std.debug.print("\n\nValue2: {}\n\n", .{value2});
+                        },
+                        .dw => {
+                            const value: u16 = std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little);
+                            std.mem.writeInt(u16, self.ram[ramPointer..][0..2], value, .little);
+                        },
+                        .dd => {
+                            const value: u32 = std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little);
+                            std.mem.writeInt(u32, self.ram[ramPointer..][0..4], value, .little);
+                        },
+                        .string => {
+                            const string: []const u8 = self.ram[variable.pointer .. variable.len + 1];
+                            @memcpy(self.ram[ramPointer .. ramPointer + string.len], string);
+                        },
+                    }
+                }
+            },
+        }
+    }
 
     pub fn printRegisters(self: *Cpu) void {
         for (0.., self.registers) |index, register| {
@@ -217,7 +289,7 @@ pub const Cpu = struct {
 
 test "InstructionsAdd" {
     var cpu = Cpu.init();
-    const instruction = Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 5 } } };
+    const instruction = Instructions{ .add = .{ .valA = 0, .valB = .{ .value = 5 } } };
 
     try cpu.executeInstruction(instruction);
     try std.testing.expect(cpu.registers[0] == 5);
@@ -225,7 +297,7 @@ test "InstructionsAdd" {
 
 test "InstructionsSub" {
     var cpu = Cpu.init();
-    const instruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .value = -5 } } };
+    const instruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .value = -5 } } };
 
     try cpu.executeInstruction(instruction);
     try std.testing.expect(cpu.registers[0] == 5);
@@ -233,7 +305,7 @@ test "InstructionsSub" {
 
 test "InstructionsMov" {
     var cpu = Cpu.init();
-    const instruction = Instructions{ .mov = .{ .regA = 0, .valB = .{ .value = 5 } } };
+    const instruction = Instructions{ .mov = .{ .valA = 0, .valB = .{ .value = 5 } } };
 
     try cpu.executeInstruction(instruction);
     try std.testing.expect(cpu.registers[0] == 5);
@@ -242,16 +314,16 @@ test "InstructionsMov" {
 test "AddSubMov" {
     var cpu = Cpu.init();
 
-    var myInstruction = Instructions{ .add = .{ .regA = 0, .valB = .{ .value = 10 } } };
+    var myInstruction = Instructions{ .add = .{ .valA = 0, .valB = .{ .value = 10 } } };
     try cpu.executeInstruction(myInstruction);
 
-    myInstruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .value = 5 } } };
+    myInstruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .value = 5 } } };
     try cpu.executeInstruction(myInstruction);
 
-    myInstruction = Instructions{ .mov = .{ .regA = 1, .valB = .{ .value = 4 } } };
+    myInstruction = Instructions{ .mov = .{ .valA = 1, .valB = .{ .value = 4 } } };
     try cpu.executeInstruction(myInstruction);
 
-    myInstruction = Instructions{ .sub = .{ .regA = 0, .valB = .{ .register = 1 } } };
+    myInstruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .register = 1 } } };
     try cpu.executeInstruction(myInstruction);
 
     try std.testing.expect(cpu.registers[0] == 1);
