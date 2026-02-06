@@ -74,6 +74,10 @@ pub fn main() !void {
                     };
                 },
                 .data => {
+                    if (token[0] == '\"') {
+                        return error.InvalidNameForAVariable;
+                    }
+
                     //token = name of the variable
                     const typeOrString = tokens.next() orelse {
                         std.debug.print("Not found token for type\n", .{});
@@ -127,7 +131,21 @@ fn parseLabel(token: ?[]const u8) !root.Label {
     } else return error.InvalidLabel;
 }
 
-fn parseOperator(operand: []const u8) root.Operator {
+fn parseOperator(operand: []const u8) !root.Operator {
+    if (operand[0] == '\"') {
+        const firstDoubleQuote = std.mem.indexOf(u8, operand, "\"") orelse {
+            std.debug.print("Cannot find the start of the string\n", .{});
+            return error.InvalidString;
+        };
+
+        const lastDoubleQuote = std.mem.lastIndexOf(u8, operand, "\"") orelse {
+            std.debug.print("Cannot find the end of the string\n", .{});
+            return error.InvalidString;
+        };
+
+        return root.Operator{ .string = operand[firstDoubleQuote + 1 .. lastDoubleQuote] };
+    }
+
     if (std.fmt.parseInt(u32, operand, 10)) |value| {
         return root.Operator{ .value = value };
     } else |_| {
@@ -136,10 +154,13 @@ fn parseOperator(operand: []const u8) root.Operator {
                 return root.Operator{ .string = operand };
             } };
         } else {
-            return root.Operator{ .string = operand };
+            return root.Operator{ .label = operand };
         }
     }
 }
+
+// fn prepareforParsing(line:[]const u8, token)
+
 fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     return switch (variable.dataType) {
         .db => std.mem.readInt(u8, ram[variable.pointer..][0..1], .little),
@@ -151,15 +172,15 @@ fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
 
 fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence), line: []const u8) !root.Instructions {
     return switch (instrCode) {
-        .add => root.Instructions{ .add = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
-        .sub => root.Instructions{ .sub = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
-        .mov => root.Instructions{ .mov = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.next().?) } },
-        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperator(tokens.next().?), .valB = parseOperator(tokens.next().?) } },
+        .add => root.Instructions{ .add = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
+        .sub => root.Instructions{ .sub = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
+        .mov => root.Instructions{ .mov = .{ .regA = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
+        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperator(tokens.next().?) catch return error.UnableToParseOperand, .valB = parseOperator(tokens.rest()) catch return error.UnableToParseOperand } },
         .jmp => root.Instructions{
-            .jmp = try parseLabel(tokens.next()),
+            .jmp = try parseLabel(tokens.rest()),
         },
         .je => root.Instructions{
-            .je = try parseLabel(tokens.next()),
+            .je = try parseLabel(tokens.rest()),
         },
         .print => root.Instructions{
             .print = isntr: {
@@ -175,10 +196,11 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
                         return error.InvalidString;
                     };
 
-                    break :isntr parseOperator(line[firstDoubleQuote + 1 .. lastDoubleQuote]);
-                    // const fullString = line[firstDoubleQuote + 1 .. lastDoubleQuote];
+                    break :isntr root.Operator{ .string = line[firstDoubleQuote + 1 .. lastDoubleQuote] };
+                    // _ = line;
+                    // break :isntr try parseOperator(token);
                 } else {
-                    break :isntr parseOperator(token);
+                    break :isntr try parseOperator(token);
                 }
             },
         },

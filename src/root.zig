@@ -19,6 +19,7 @@ pub const Operator = union(enum) {
     register: u8,
     value: u32,
     string: []const u8,
+    label: []const u8,
 };
 
 pub const DataTypes = enum {
@@ -58,7 +59,7 @@ pub const Cpu = struct {
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
             .add => |data| {
-                const valB = try self.parseOperator(data.valB);
+                const valB = try self.parseOperatorValue(data.valB);
 
                 const addition = @addWithOverflow(self.registers[data.regA], valB);
                 self.registers[data.regA] = addition[0];
@@ -68,7 +69,7 @@ pub const Cpu = struct {
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .sub => |data| {
-                const valB = try self.parseOperator(data.valB);
+                const valB = try self.parseOperatorValue(data.valB);
 
                 const subtraction = @subWithOverflow(self.registers[data.regA], valB);
 
@@ -79,7 +80,7 @@ pub const Cpu = struct {
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .mov => |data| {
-                const valB = try self.parseOperator(data.valB);
+                const valB = try self.parseOperatorValue(data.valB);
 
                 self.registers[data.regA] = valB;
 
@@ -87,8 +88,8 @@ pub const Cpu = struct {
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.regA])) < 0) 1 else 0;
             },
             .cmp => |data| {
-                const valB = try self.parseOperator(data.valB);
-                const valA = try self.parseOperator(data.valA);
+                const valB = try self.parseOperatorValue(data.valB);
+                const valA = try self.parseOperatorValue(data.valA);
 
                 self.flags[0] = if (valA == valB) 1 else 0;
                 self.flags[1] = if (valA < valB) 1 else 0;
@@ -110,7 +111,8 @@ pub const Cpu = struct {
                 const char: u8 = @intCast(value);
                 std.debug.print("{c}", .{char});
             },
-            .string => |string| if (self.dataTable.get(string)) |variable| {
+            .string => |string| std.debug.print("{s}", .{string}),
+            .label => |label| if (self.dataTable.get(label)) |variable| {
                 return switch (variable.dataType) {
                     .db => {
                         const value = std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little);
@@ -130,15 +132,16 @@ pub const Cpu = struct {
                         std.debug.print("{s}", .{self.ram[variable.pointer .. variable.pointer + variable.len]});
                     },
                 };
-            } else std.debug.print("{s}", .{string}),
+            } else std.debug.print("{s}", .{label}),
         }
     }
 
-    fn parseOperator(self: *Cpu, op: Operator) !u32 {
+    fn parseOperatorValue(self: *Cpu, op: Operator) !u32 {
         return switch (op) {
             .register => |regIndex| self.registers[regIndex],
             .value => |value| value,
-            .string => |string| if (self.dataTable.get(string)) |variable| {
+            .string => error.InvalidDataType,
+            .label => |string| if (self.dataTable.get(string)) |variable| {
                 return switch (variable.dataType) {
                     .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
                     .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
@@ -148,6 +151,21 @@ pub const Cpu = struct {
             } else return error.InvalidValue,
         };
     }
+
+    // fn WriteToOpearator(self: *Cpu, write: Operator, read: Operator) !void {
+    //     switch (write) {
+    //         .register => |regIndex| self.registers[regIndex] = self.parseOperatorValue(read),
+    //         .value => |value| value,
+    //         .string => |string| if (self.dataTable.get(string)) |variable| {
+    //             return switch (variable.dataType) {
+    //                 .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
+    //                 .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
+    //                 .dd => std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little),
+    //                 .string => error.InvalidDataType,
+    //             };
+    //         } else return error.InvalidValue,
+    //     }
+    // }
 
     pub fn printRegisters(self: *Cpu) void {
         for (0.., self.registers) |index, register| {

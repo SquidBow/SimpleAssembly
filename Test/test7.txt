@@ -1,10 +1,10 @@
 .data
 string "Hello  WORLD!"
-smth db 131
+smth db 126
 
 .code
-mov r0 33
-print string
-print " Just Works"
+mov r0 smth
+print r0
+print " Just Works "
 # print smth
-# print 33
+print 33
