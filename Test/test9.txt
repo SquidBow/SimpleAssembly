@@ -1,0 +1,9 @@
+.data
+
+string1 "Data1"
+string2 "qwertyu"
+
+.code
+print string1
+readCmpl string1 string2 string 4
+print string1

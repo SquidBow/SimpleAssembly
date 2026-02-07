@@ -1,14 +1,16 @@
 const std = @import("std");
 
 pub const Instructions = union(enum) {
-    add: struct { valA: u8, valB: Operator },
-    sub: struct { valA: u8, valB: Operator },
-    mov: struct { valA: u8, valB: Operator },
-    cmp: struct { valA: Operator, valB: Operator },
+    add: struct { reg: u8, val: Operand },
+    sub: struct { reg: u8, val: Operand },
+    mov: struct { reg: u8, val: Operand },
+    cmp: struct { valA: Operand, valB: Operand },
     jmp: Label,
     je: Label,
-    print: Operator,
-    write: struct { valA: Operator, valB: Operator },
+    print: Operand,
+    write: struct { destination: Operand, data: Operand },
+    // read, struct { register: u8, }
+    readCmpl: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
 };
 
 pub const Label = union(enum) {
@@ -16,7 +18,7 @@ pub const Label = union(enum) {
     label: []const u8,
 };
 
-pub const Operator = union(enum) {
+pub const Operand = union(enum) {
     register: u8,
     value: u32,
     string: []const u8,
@@ -24,6 +26,7 @@ pub const Operator = union(enum) {
 };
 
 pub const DataTypes = enum {
+    // none,
     db,
     dw,
     dd,
@@ -60,58 +63,99 @@ pub const Cpu = struct {
     pub fn executeInstruction(self: *Cpu, instruction: Instructions) !void {
         switch (instruction) {
             .add => |data| {
-                const valB = try self.parseOperatorValue(data.valB);
+                const valB = try self.parseOperandValue(data.val);
 
-                const addition = @addWithOverflow(self.registers[data.valA], valB);
-                self.registers[data.valA] = addition[0];
+                const addition = @addWithOverflow(self.registers[data.reg], valB);
+                self.registers[data.reg] = addition[0];
                 self.flags[2] = addition[1];
 
-                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .sub => |data| {
-                const valB = try self.parseOperatorValue(data.valB);
+                const valB = try self.parseOperandValue(data.val);
 
-                const subtraction = @subWithOverflow(self.registers[data.valA], valB);
+                const subtraction = @subWithOverflow(self.registers[data.reg], valB);
 
-                self.registers[data.valA] = subtraction[0];
+                self.registers[data.reg] = subtraction[0];
                 self.flags[2] = subtraction[1];
 
-                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .mov => |data| {
-                const valB = try self.parseOperatorValue(data.valB);
+                const valB = try self.parseOperandValue(data.val);
 
-                self.registers[data.valA] = valB;
+                self.registers[data.reg] = valB;
 
-                self.flags[0] = if (self.registers[data.valA] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.valA])) < 0) 1 else 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .cmp => |data| {
-                const valB = try self.parseOperatorValue(data.valB);
-                const valA = try self.parseOperatorValue(data.valA);
+                const valB = try self.parseOperandValue(data.valA);
+                const valA = try self.parseOperandValue(data.valB);
 
                 self.flags[0] = if (valA == valB) 1 else 0;
                 self.flags[1] = if (valA < valB) 1 else 0;
             },
-            .print => |operator| {
-                self.print(operator) catch {
-                    // std.debug.print("Failed to print: {any}\n", .{operator});
-                    return error.UnableToPrintOperator;
+            .print => |operand| {
+                self.print(operand) catch {
+                    // std.debug.print("Failed to print: {any}\n", .{Operand});
+                    return error.UnableToPrintOperand;
                 };
             },
             .write => |data| {
-                self.WriteToOpearator(data.valA, data.valB) catch {
-                    std.debug.print("Failed to write to ram", .{});
+                const destination = self.parseOperandDestination(data.destination) catch {
+                    std.debug.print("Failed to write to ram\n", .{});
                     return error.FailedToWriteToRam;
                 };
+                self.WriteToRam(data.data, destination) catch {
+                    std.debug.print("Was unable to write to ram at: {}\n", .{destination});
+                    return error.FailedToWriteToRam;
+                };
+            },
+            .readCmpl => |data| {
+                const dataPointer = try self.parseOperandDestination(data.dataPointer);
+                // std.debug.print("\n\nDataPointer: {d}\n\n", .{dataPointer});
+
+                switch (data.destination) {
+                    .register => |reg| {
+                        self.registers[reg] = switch (data.dataType) {
+                            .db => std.mem.readInt(u8, self.ram[dataPointer..][0..1], .little),
+                            .dw => std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little),
+                            .dd => std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little),
+                            else => return error.InvalidDataType,
+                        };
+                    },
+                    else => {
+                        const destination = self.parseOperandDestination(data.destination) catch {
+                            std.debug.print("Unable to find destination to read to", .{});
+                            return error.InvalidDestination;
+                        };
+
+                        switch (data.dataType) {
+                            .string => {
+                                if (data.stringLength == 0) return error.InvalidStringLength;
+                                @memmove(self.ram[destination..][0..data.stringLength], self.ram[dataPointer..][0..data.stringLength]);
+                            },
+                            .db => self.ram[destination] = self.ram[dataPointer],
+                            .dw => {
+                                const value: u16 = std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little);
+                                std.mem.writeInt(u16, self.ram[destination..][0..2], value, .little);
+                            },
+                            .dd => {
+                                const value: u32 = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
+                                std.mem.writeInt(u32, self.ram[destination..][0..4], value, .little);
+                            },
+                        }
+                    },
+                }
             },
             else => {},
         }
     }
 
-    fn print(self: *Cpu, op: Operator) !void {
+    fn print(self: *Cpu, op: Operand) !void {
         switch (op) {
             .register => |reg| {
                 const char: u8 = @intCast(self.registers[reg]);
@@ -141,6 +185,7 @@ pub const Cpu = struct {
                     .string => {
                         std.debug.print("{s}", .{self.ram[variable.pointer .. variable.pointer + variable.len]});
                     },
+                    // .none => {},
                 };
             } else {
                 std.debug.print("Vairable: {s} doesn't exist\n", .{label});
@@ -149,7 +194,7 @@ pub const Cpu = struct {
         }
     }
 
-    fn parseOperatorValue(self: *Cpu, op: Operator) !u32 {
+    fn parseOperandValue(self: *Cpu, op: Operand) !u32 {
         return switch (op) {
             .register => |regIndex| self.registers[regIndex],
             .value => |value| value,
@@ -159,35 +204,24 @@ pub const Cpu = struct {
                     .db => std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little),
                     .dw => std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little),
                     .dd => std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little),
-                    .string => error.InvalidDataType,
+                    .string => error.InvalidLabel,
+                    // .none => error.DataTypeMustExist,
                 };
             } else return error.InvalidVairableName,
         };
     }
 
-    fn WriteToOpearator(self: *Cpu, write: Operator, read: Operator) !void {
-        switch (write) {
-            .register => |regIndex| {
-                self.registers[regIndex] = try self.parseOperatorValue(read);
-            },
-            .value => |value| {
-                self.WriteToRam(read, value) catch {
-                    std.debug.print("Failed to write to ram", .{});
-                    return error.FailedToWriteToRam;
-                };
-            },
-            .label => |label| if (self.dataTable.get(label)) |variable| {
-                self.WriteToRam(read, variable.pointer) catch {
-                    std.debug.print("Failed to write to ram", .{});
-                    return error.FailedToWriteToRam;
-                };
-            } else return error.InvalidVairableName,
+    fn parseOperandDestination(self: *Cpu, write: Operand) !u32 {
+        return switch (write) {
+            .register => return error.CantWriteToARegister,
+            .value => |value| value,
+            .label => |label| if (self.dataTable.get(label)) |variable| variable.pointer else return error.InvalidLabel,
             .string => return error.CantWriteToAString,
-        }
+        };
     }
 
-    fn WriteToRam(self: *Cpu, operator: Operator, ramPointer: usize) !void {
-        switch (operator) {
+    fn WriteToRam(self: *Cpu, operand: Operand, ramPointer: usize) !void {
+        switch (operand) {
             .register => |reg| {
                 const value = self.registers[reg];
 
@@ -233,6 +267,7 @@ pub const Cpu = struct {
                             const string: []const u8 = self.ram[variable.pointer .. variable.len + 1];
                             @memcpy(self.ram[ramPointer .. ramPointer + string.len], string);
                         },
+                        // .none => {},
                     }
                 }
             },
@@ -257,7 +292,7 @@ pub const Cpu = struct {
                 switch (instruction) {
                     .jmp => |label| {
                         i = self.parseLabel(label) catch {
-                            std.debug.print("Unable to parse the label", .{});
+                            std.debug.print("Unable to parse the label\n", .{});
                             return;
                         };
                         i -= 1;
@@ -265,7 +300,7 @@ pub const Cpu = struct {
                     .je => |label| {
                         if (self.flags[0] == 1) {
                             i = self.parseLabel(label) catch {
-                                std.debug.print("Unable to parse the label", .{});
+                                std.debug.print("Unable to parse the label\n", .{});
                                 return;
                             };
                             i -= 1;
