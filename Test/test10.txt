@@ -1,0 +1,8 @@
+.data
+value dd 35
+
+.code
+mov r0 33
+print r0
+read r0 0
+print r0

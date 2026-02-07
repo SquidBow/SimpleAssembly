@@ -209,6 +209,7 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             root.DataTypes.db, .stringLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch {
             return error.InvalidStringLength;
         } } },
+        .read => root.Instructions{ .read = .{ .register = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .dataPointer = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
     };
 }
 

@@ -9,7 +9,7 @@ pub const Instructions = union(enum) {
     je: Label,
     print: Operand,
     write: struct { destination: Operand, data: Operand },
-    // read, struct { register: u8, }
+    read: struct { register: u8, dataPointer: Operand },
     readCmpl: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
 };
 
@@ -150,6 +150,11 @@ pub const Cpu = struct {
                         }
                     },
                 }
+            },
+            .read => |data| {
+                const dataPointer = try self.parseOperandDestination(data.dataPointer);
+
+                self.registers[data.register] = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
             },
             else => {},
         }
