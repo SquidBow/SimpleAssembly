@@ -35,7 +35,7 @@ pub fn main() !void {
     var instructionCount: u32 = 0;
 
     while (lines.next()) |line| {
-        if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
+        if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#") or std.mem.startsWith(u8, line, ";")) {
             continue;
         } else if (line[line.len - 1] == ':') {
             try cpu.codeTable.put(line[0 .. line.len - 1], instructionCount);

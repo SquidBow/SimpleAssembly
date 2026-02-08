@@ -675,12 +675,16 @@ pub const Cpu = struct {
                         };
                         defer self.allocator.free(procName);
 
+                        const variable: u32 = self.registers[0];
+
                         const line: u32 = self.codeTable.get(procName) orelse return error.InvalidProcName;
                         try self.executeInstruction(Instructions{ .push = 0 });
                         self.registers[0] = @bitCast(i);
                         try self.executeInstruction(Instructions{ .push = 0 });
                         depth += 1;
                         i = line - 1;
+
+                        self.registers[0] = variable;
                     },
                     .ret => {
                         if (depth == 0) break;

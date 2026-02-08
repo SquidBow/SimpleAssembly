@@ -1,18 +1,18 @@
 # Simple Assembly
 An pseudo assembly interpreter written in zig
 
-#Writing:
+# Writing:
     register = r + number
     string = " + string + "
 
-#Sections
+# Sections
 .data - for declaring variables
 To declear a variable do: [name] [DataType] [Value]
 To declear a string do: [name] [string]
 
 .code - for instructions
 
-#Instructions
+# Instructions
 Short:
     Label = value/string
     DataType = db/dw/dd/string
@@ -50,11 +50,44 @@ Jumps:
     jle [Label] - jumps to a location if the zero flag is 1 or the less flag is 1
     jge [Label] - jumps to a location if the less flag is set to 0
 
+Comments must me in their own line and start with ';' or '/' or '#'
 
-#Procedures
+# Procedures
 Declare main proc with: main:
 
 To declare proc use: proc [name]
 To call a proc use: call [name]
 
 Each proc has to have a "ret" statement where it ends
+
+# Example program
+
+.data
+//Create a variable to store data
+variable db 27
+
+.code
+//Start of the program
+main:
+
+//Move 33 into register 0
+mov r0 33
+
+//Call the printString proc
+call printString
+
+//Move the data from the variable into register 0
+mov r0 variable
+
+//Print the register as a number
+printNum r0
+
+//Exit the program
+ret
+
+proc printString:
+//Print the register 0 as a string
+print r0
+
+//Return to main
+ret

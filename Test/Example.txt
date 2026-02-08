@@ -1,0 +1,30 @@
+
+.data
+//Create a variable to store data
+variable db 27
+
+.code
+//Start of the program
+main:
+
+//Move 33 into register 0
+mov r0 33
+
+//Call the printString proc
+call printString
+
+//Move the data from the variable into register 0
+mov r0 variable
+
+//Print the register as a number
+printNum r0
+
+//Exit the program
+ret
+
+proc printString:
+//Print the register 0 as a string
+print r0
+
+//Return to main
+ret
