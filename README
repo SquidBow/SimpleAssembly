@@ -1,0 +1,60 @@
+# Simple Assembly
+An pseudo assembly interpreter written in zig
+
+#Writing:
+    register = r + number
+    string = " + string + "
+
+#Sections
+.data - for declaring variables
+To declear a variable do: [name] [DataType] [Value]
+To declear a string do: [name] [string]
+
+.code - for instructions
+
+#Instructions
+Short:
+    Label = value/string
+    DataType = db/dw/dd/string
+    Variable = DataType/Length (if a string)
+    Operand = register/value/string/Variable
+
+Instructions:
+    add [register] [Operand] - adds a value from the Operand with a value from the register and saves to the register
+    sub [register] [Operand] - subtracts a value from the Operand from a value from the register and saves to the register
+    mov [register] [Operand] - puts a value from the Operand into the register overwriting its contents
+    cmp [Operand] [Operand] - compares 2 values gotten from the Operands and sets flags
+    mul [register] [Operand] - multiplies the value in the register by the value in the Operand and puts the result in the register
+    div [register] [Operand] - divides the value in the register by the value in the Operand and puts the result in the register
+    mod [register] [Operand] - divides the value in the register by the value in the Operand and puts the reminder in the register
+    and [register] [Operand] - logical and on the register with the value from the Operand
+    or [register] [Operand] - logical or on the register with the value from the Operand
+    xor [register] [Operand] - logical xor on the register with the value from the Operand
+    shl [register] - bit shift left on the value in the register
+    shr [register] - bit shift right on the value in the register
+    print [Operand] - prints a value from the Operand as a string/char
+    printNum [Operand] - prints the value from the Operand as a number
+    write [destination: Operand] [data: Operand] - writes data from the data Operand into the ram position destination Operand
+    read [register] [Operand] [DataType] (optional. Default dd) - moves the data from the ram at position of Operand value into the register
+    MovRam [destination: Operand] [data: Operand] [Variable] - writes data from ram position at data ram Operand value to ram at position at destination Operand value
+    push [register] - pushes the value of the register into the stack
+    pop [register] - pops the value from the stack into the register
+    input [Operand] [Variable] - saves the input in desired DataType into a ram at location of the value of the Operand
+
+Jumps:
+    jmp [Label] - jumps to a location of the label
+    je [Label] - jumps to a location if the zero flag is set to 1
+    jne [Label] - jumps to a location if the zero flag is set to 0
+    jl [Label] - jumps to a location if the less flag is set to 1
+    jg [Label] - jumps to a location if both zero and less flags are set to 0
+    jle [Label] - jumps to a location if the zero flag is 1 or the less flag is 1
+    jge [Label] - jumps to a location if the less flag is set to 0
+
+
+#Procedures
+Declare main proc with: main:
+
+To declare proc use: proc [name]
+To call a proc use: call [name]
+
+Each proc has to have a "ret" statement where it ends

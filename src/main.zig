@@ -196,15 +196,27 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             .print = try parseOperandToken(tokens.rest()),
         },
         .write => root.Instructions{ .write = .{ .destination = parseOperandToken(tokens.next().?) catch return error.UnableToParseOperand, .data = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
-        .readToRam => root.Instructions{ .readToRam = .{
+        .MovRam => root.Instructions{ .MovRam = .{
             .destination = parseOperandToken(tokens.next() orelse return error.InvalidReadDestination) catch
                 return error.UnableToParseOperand,
             .dataPointer = parseOperandToken(tokens.next() orelse return error.InvalidReadDataPointer) catch
                 return error.UnableToParseOperand,
-            .dataType = std.meta.stringToEnum(root.DataTypes, tokens.next() orelse "0") orelse
-                root.DataTypes.db,
-            .stringLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch {
-                return error.InvalidStringLength;
+            .variable = block: {
+                const token = tokens.next() orelse return error.InvalidToken;
+
+                if (std.meta.stringToEnum(root.DataTypes, token)) |dataType| {
+                    break :block root.Variable{ .dataType = dataType, .len = 0, .pointer = 0 };
+                }
+
+                const len = std.fmt.parseInt(usize, token, 10) catch {
+                    return error.InvalidToken;
+                };
+
+                break :block root.Variable{
+                    .dataType = root.DataTypes.string,
+                    .len = len,
+                    .pointer = 0,
+                };
             },
         } },
         .read => root.Instructions{ .read = .{
@@ -275,10 +287,30 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
             .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
         } },
-        .shr => root.Instructions{ .shr = .{
-            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
-            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
-        } },
+        .shr => root.Instructions{
+            .shr = .{
+                .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+                .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+            },
+        },
+        .jne => root.Instructions{
+            .jne = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
+        .jg => root.Instructions{
+            .jg = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
+        .jl => root.Instructions{
+            .jl = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
+        .jge => root.Instructions{
+            .jge = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
+        .jle => root.Instructions{
+            .jle = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
+        .jc => root.Instructions{
+            .jc = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
+        },
     };
 }
 

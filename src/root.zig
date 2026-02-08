@@ -11,7 +11,7 @@ pub const Instructions = union(enum) {
     printNum: Operand,
     write: struct { destination: Operand, data: Operand },
     read: struct { register: u8, dataPointer: Operand, dataType: DataTypes },
-    readToRam: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
+    MovRam: struct { destination: Operand, dataPointer: Operand, variable: Variable },
     push: u8,
     pop: u8,
     call: []const u8,
@@ -26,6 +26,12 @@ pub const Instructions = union(enum) {
     xor: struct { reg: u8, val: Operand },
     shl: struct { reg: u8, val: Operand },
     shr: struct { reg: u8, val: Operand },
+    jne: Label,
+    jg: Label,
+    jl: Label,
+    jge: Label,
+    jle: Label,
+    jc: Label,
 };
 
 pub const Label = union(enum) {
@@ -56,7 +62,7 @@ pub const Variable = struct {
 pub const Cpu = struct {
     registers: [4]u32 = .{0} ** 4,
     stackPointer: usize = 1024,
-    flags: [3]u8 = .{0} ** 3, //0.Zero, 1.Sign, 2.Carry
+    flags: [4]u8 = .{0} ** 4, //0.Zero, 1.Sign, 2.Overflow, 3.Carry
     ram: [1024]u8 = undefined,
     dataTable: std.StringHashMap(Variable),
     codeTable: std.StringHashMap(u32),
@@ -79,21 +85,35 @@ pub const Cpu = struct {
         switch (instruction) {
             .add => |data| {
                 const valB = try self.parseOperandValue(data.val);
+                const valA = self.registers[data.reg];
 
-                const addition = @addWithOverflow(self.registers[data.reg], valB);
-                self.registers[data.reg] = addition[0];
-                self.flags[2] = addition[1];
+                const uAddition = @addWithOverflow(valA, valB);
+                self.registers[data.reg] = uAddition[0];
+                self.flags[3] = uAddition[1];
+
+                const sValA: i32 = @bitCast(valA);
+                const sValB: i32 = @bitCast(valB);
+
+                const sAddition = @addWithOverflow(sValA, sValB);
+                self.flags[2] = sAddition[1];
 
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .sub => |data| {
                 const valB = try self.parseOperandValue(data.val);
+                const valA = self.registers[data.reg];
 
-                const subtraction = @subWithOverflow(self.registers[data.reg], valB);
+                const uSubtraction = @subWithOverflow(valA, valB);
+                self.registers[data.reg] = uSubtraction[0];
 
-                self.registers[data.reg] = subtraction[0];
-                self.flags[2] = subtraction[1];
+                self.flags[3] = uSubtraction[1];
+
+                const sValA: i32 = @bitCast(valA);
+                const sValB: i32 = @bitCast(valB);
+
+                const sSubtraction = @subWithOverflow(sValA, sValB);
+                self.flags[2] = sSubtraction[1];
 
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
@@ -107,11 +127,20 @@ pub const Cpu = struct {
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .cmp => |data| {
-                const valB = try self.parseOperandValue(data.valA);
-                const valA = try self.parseOperandValue(data.valB);
+                const valA = try self.parseOperandValue(data.valA);
+                const valB = try self.parseOperandValue(data.valB);
 
-                self.flags[0] = if (valA == valB) 1 else 0;
-                self.flags[1] = if (valA < valB) 1 else 0;
+                const uResult = @subWithOverflow(valA, valB);
+                self.flags[3] = uResult[1];
+
+                const sValA: i32 = @bitCast(valA);
+                const sValB: i32 = @bitCast(valB);
+
+                const sResult = @subWithOverflow(sValA, sValB);
+                self.flags[2] = sResult[1];
+
+                self.flags[0] = if (uResult[0] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(uResult[0])) < 0) 1 else 0;
             },
             .print => |operand| {
                 self.print(operand) catch {
@@ -129,7 +158,7 @@ pub const Cpu = struct {
                     return error.FailedToWriteToRam;
                 };
             },
-            .readToRam => |data| {
+            .MovRam => |data| {
                 const dataPointer = try self.parseOperandDestination(data.dataPointer);
                 // std.debug.print("\n\nDataPointer: {d}\n\n", .{dataPointer});
 
@@ -138,10 +167,10 @@ pub const Cpu = struct {
                     return error.InvalidDestination;
                 };
 
-                switch (data.dataType) {
+                switch (data.variable.dataType) {
                     .string => {
-                        if (data.stringLength == 0) return error.InvalidStringLength;
-                        @memmove(self.ram[destination..][0..data.stringLength], self.ram[dataPointer..][0..data.stringLength]);
+                        if (data.variable.len == 0) return error.InvalidStringLength;
+                        @memmove(self.ram[destination..][0..data.variable.len], self.ram[dataPointer..][0..data.variable.len]);
                     },
                     .db => {
                         const value: u8 = std.mem.readInt(u8, self.ram[dataPointer..][0..1], .little);
@@ -237,11 +266,17 @@ pub const Cpu = struct {
             },
             .mul => |data| {
                 const valB = try self.parseOperandValue(data.val);
+                const valA = self.registers[data.reg];
 
-                const multiplication = @mulWithOverflow(self.registers[data.reg], valB);
+                const uMultiplication = @mulWithOverflow(valA, valB);
+                self.registers[data.reg] = uMultiplication[0];
+                self.flags[3] = uMultiplication[1];
 
-                self.registers[data.reg] = multiplication[0];
-                self.flags[2] = multiplication[1];
+                const sValA: i32 = @bitCast(valA);
+                const sValB: i32 = @bitCast(valB);
+
+                const sMultiplication = @mulWithOverflow(sValA, sValB);
+                self.flags[2] = sMultiplication[1];
 
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
@@ -267,6 +302,7 @@ pub const Cpu = struct {
 
                 self.registers[data.reg] %= valB;
 
+                self.flags[3] = 0;
                 self.flags[2] = 0;
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
@@ -282,6 +318,7 @@ pub const Cpu = struct {
 
                 self.registers[data.reg] &= valB;
 
+                self.flags[3] = 0;
                 self.flags[2] = 0;
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
@@ -291,6 +328,7 @@ pub const Cpu = struct {
 
                 self.registers[data.reg] |= valB;
 
+                self.flags[3] = 0;
                 self.flags[2] = 0;
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
@@ -300,25 +338,36 @@ pub const Cpu = struct {
 
                 self.registers[data.reg] ^= valB;
 
+                self.flags[3] = 0;
                 self.flags[2] = 0;
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .shl => |data| {
-                const valB = try self.parseOperandValue(data.val);
+                const valB: u5 = @intCast(try self.parseOperandValue(data.val) % 32);
+                if (valB == 0) return;
+
+                const valA = self.registers[data.reg];
 
                 self.registers[data.reg] <<= @intCast(valB);
 
-                self.flags[2] = 0;
+                const shift: u5 = @intCast(32 - @as(u32, valB));
+                self.flags[3] = @intCast((valA >> shift) % 2);
+                self.flags[2] = if (valA >> 31 == self.registers[data.reg] >> 31) 0 else 1;
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+                self.flags[1] = @intCast(self.registers[data.reg] >> 31);
             },
             .shr => |data| {
-                const valB = try self.parseOperandValue(data.val);
+                const valB: u5 = @intCast(try self.parseOperandValue(data.val) % 32);
+                if (valB == 0) return;
+
+                const valA = self.registers[data.reg];
 
                 self.registers[data.reg] >>= @intCast(valB);
 
-                self.flags[2] = 0;
+                self.flags[3] = @intCast((valA >> (valB - 1)) % 2);
+                self.flags[2] = @intCast(valA >> 31);
+
                 self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
@@ -552,6 +601,66 @@ pub const Cpu = struct {
                     },
                     .je => |label| {
                         if (self.flags[0] == 1) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jne => |label| {
+                        if (self.flags[0] == 0) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jg => |label| {
+                        if (self.flags[0] == 0 and (self.flags[1] == self.flags[2])) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jl => |label| {
+                        if (self.flags[1] != self.flags[2]) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jge => |label| {
+                        if (self.flags[1] == self.flags[2]) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jle => |label| {
+                        if (self.flags[0] != self.flags[2] or self.flags[1] == 0) {
+                            i = self.parseLabel(label) catch {
+                                std.debug.print("Unable to parse the label\n", .{});
+                                return;
+                            };
+                            if (i == 0) continue;
+                            i -= 1;
+                        }
+                    },
+                    .jc => |label| {
+                        if (self.flags[2] == 1) {
                             i = self.parseLabel(label) catch {
                                 std.debug.print("Unable to parse the label\n", .{});
                                 return;
