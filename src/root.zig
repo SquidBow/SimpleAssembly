@@ -241,7 +241,30 @@ pub const Cpu = struct {
                 const char: u8 = @intCast(value);
                 std.debug.print("{c}", .{char});
             },
-            .string => |string| std.debug.print("{s}", .{string}),
+            .string => |string| {
+                // std.debug.print("{s}", .{string});
+                var index: usize = 0;
+
+                while (index < string.len) : (index += 1) {
+                    if (string[index] == '\\' and index + 1 < string.len) {
+                        switch (string[index + 1]) {
+                            'n' => {
+                                std.debug.print("\n", .{});
+                                index += 1;
+                                continue;
+                            },
+                            't' => {
+                                std.debug.print("\t", .{});
+                                index += 1;
+                                continue;
+                            },
+                            else => {},
+                        }
+                    }
+
+                    std.debug.print("{c}", .{string[index]});
+                }
+            },
             .label => |label| if (self.dataTable.get(label)) |variable| {
                 return switch (variable.dataType) {
                     .db => {
@@ -259,7 +282,28 @@ pub const Cpu = struct {
                         std.debug.print("{c}", .{char});
                     },
                     .string => {
-                        std.debug.print("{s}", .{self.ram[variable.pointer .. variable.pointer + variable.len]});
+                        const string: []const u8 = self.ram[variable.pointer .. variable.pointer + variable.len];
+                        var index: usize = 0;
+
+                        while (index < string.len) : (index += 1) {
+                            if (string[index] == '\\' and index + 1 < string.len) {
+                                switch (string[index + 1]) {
+                                    'n' => {
+                                        std.debug.print("\n", .{});
+                                        index += 1;
+                                        continue;
+                                    },
+                                    't' => {
+                                        std.debug.print("\t", .{});
+                                        index += 1;
+                                        continue;
+                                    },
+                                    else => {},
+                                }
+                            }
+
+                            std.debug.print("{c}", .{string[index]});
+                        }
                     },
                     // .none => {},
                 };

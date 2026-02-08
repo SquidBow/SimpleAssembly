@@ -1,5 +1,6 @@
 .data
 number db 13
+smth "Wrong number!\n\n"
 
 .code
 main:
@@ -11,7 +12,7 @@ read r0 20 dw
 cmp r0 number 
 je end
 
-print "Wrong number!"
+print smth
 jmp main
 
 end:
