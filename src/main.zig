@@ -63,7 +63,7 @@ pub fn main() !void {
                     instructionCount += 1;
                     const instrCode = std.meta.stringToEnum(std.meta.Tag(root.Instructions), token) orelse continue;
 
-                    const instruction = switchInstructionCode(instrCode, &tokens, line) catch {
+                    const instruction = switchInstructionCode(instrCode, &tokens) catch {
                         std.debug.print("Failed to parse instruction: {}\n", .{instrCode});
                         return error.InvalidInstruction;
                     };
@@ -168,7 +168,7 @@ fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
     };
 }
 
-fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence), line: []const u8) !root.Instructions {
+fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence)) !root.Instructions {
     return switch (instrCode) {
         .add => root.Instructions{ .add = .{
             .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
@@ -193,26 +193,7 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             .je = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
         },
         .print => root.Instructions{
-            .print = isntr: {
-                const token = tokens.next() orelse return error.TokenNotFound;
-                if (token[0] == '\"') {
-                    const firstDoubleQuote = std.mem.indexOf(u8, line, "\"") orelse {
-                        std.debug.print("Cannot find the start of the string\n", .{});
-                        return error.InvalidString;
-                    };
-
-                    const lastDoubleQuote = std.mem.lastIndexOf(u8, line, "\"") orelse {
-                        std.debug.print("Cannot find the end of the string\n", .{});
-                        return error.InvalidString;
-                    };
-
-                    break :isntr root.Operand{ .string = line[firstDoubleQuote + 1 .. lastDoubleQuote] };
-                    // _ = line;
-                    // break :isntr try parseOperand(token);
-                } else {
-                    break :isntr try parseOperandToken(token);
-                }
-            },
+            .print = try parseOperandToken(tokens.rest()),
         },
         .write => root.Instructions{ .write = .{ .destination = parseOperandToken(tokens.next().?) catch return error.UnableToParseOperand, .data = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
         .readToRam => root.Instructions{ .readToRam = .{
@@ -263,6 +244,41 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
                 //.maxLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch return error.InvalidStringLength,
             },
         },
+        .mul => root.Instructions{ .mul = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .div => root.Instructions{ .div = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .mod => root.Instructions{ .mod = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .printNum => root.Instructions{
+            .printNum = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        },
+        .@"and" => root.Instructions{ .@"and" = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .@"or" => root.Instructions{ .@"or" = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .xor => root.Instructions{ .xor = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .shl => root.Instructions{ .shl = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .shr => root.Instructions{ .shr = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
     };
 }
 

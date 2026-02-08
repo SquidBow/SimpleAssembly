@@ -8,6 +8,7 @@ pub const Instructions = union(enum) {
     jmp: Label,
     je: Label,
     print: Operand,
+    printNum: Operand,
     write: struct { destination: Operand, data: Operand },
     read: struct { register: u8, dataPointer: Operand, dataType: DataTypes },
     readToRam: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
@@ -17,6 +18,14 @@ pub const Instructions = union(enum) {
     ret: void,
     // input: struct { destination: Operand, maxLength: usize },
     input: struct { destination: Operand, variable: Variable }, //dataType: DataTypes, maxLength: usize },
+    mul: struct { reg: u8, val: Operand },
+    div: struct { reg: u8, val: Operand },
+    mod: struct { reg: u8, val: Operand },
+    @"and": struct { reg: u8, val: Operand },
+    @"or": struct { reg: u8, val: Operand },
+    xor: struct { reg: u8, val: Operand },
+    shl: struct { reg: u8, val: Operand },
+    shr: struct { reg: u8, val: Operand },
 };
 
 pub const Label = union(enum) {
@@ -32,7 +41,6 @@ pub const Operand = union(enum) {
 };
 
 pub const DataTypes = enum {
-    // none,
     db,
     dw,
     dd,
@@ -227,7 +235,132 @@ pub const Cpu = struct {
                     },
                 }
             },
+            .mul => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                const multiplication = @mulWithOverflow(self.registers[data.reg], valB);
+
+                self.registers[data.reg] = multiplication[0];
+                self.flags[2] = multiplication[1];
+
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .div => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                if (valB == 0) {
+                    return error.DivisionByZero;
+                }
+
+                self.registers[data.reg] /= valB;
+
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .mod => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                if (valB == 0) {
+                    return error.DivisionByZero;
+                }
+
+                self.registers[data.reg] %= valB;
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .printNum => |data| {
+                self.printNum(data) catch {
+                    return error.UnableToPrintData;
+                };
+                // std.debug.print("{d}", .{self.registers[reg]});
+            },
+            .@"and" => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                self.registers[data.reg] &= valB;
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .@"or" => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                self.registers[data.reg] |= valB;
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .xor => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                self.registers[data.reg] ^= valB;
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .shl => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                self.registers[data.reg] <<= @intCast(valB);
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
+            .shr => |data| {
+                const valB = try self.parseOperandValue(data.val);
+
+                self.registers[data.reg] >>= @intCast(valB);
+
+                self.flags[2] = 0;
+                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
+                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+            },
             else => {},
+        }
+    }
+
+    fn printNum(self: *Cpu, op: Operand) !void {
+        switch (op) {
+            .register => |reg| {
+                std.debug.print("{d}", .{self.registers[reg]});
+            },
+            .value => |value| {
+                std.debug.print("{d}", .{value});
+            },
+            .string => {
+                std.debug.print("Use a normal print to print a string\n", .{});
+                return error.UnableToPrintTheString;
+            },
+            .label => |label| if (self.dataTable.get(label)) |variable| {
+                return switch (variable.dataType) {
+                    .db => {
+                        const value = std.mem.readInt(u8, self.ram[variable.pointer..][0..1], .little);
+                        std.debug.print("{d}", .{value});
+                    },
+                    .dw => {
+                        const value = std.mem.readInt(u16, self.ram[variable.pointer..][0..2], .little);
+                        std.debug.print("{d}", .{value});
+                    },
+                    .dd => {
+                        const value = std.mem.readInt(u32, self.ram[variable.pointer..][0..4], .little);
+                        std.debug.print("{d}", .{value});
+                    },
+                    .string => {
+                        std.debug.print("Use a normal print to print a string\n", .{});
+                        return error.UnableToPrintTheString;
+                    },
+                };
+            } else {
+                std.debug.print("Vairable: {s} doesn't exist\n", .{label});
+                return error.InvalidVairableName;
+            },
         }
     }
 

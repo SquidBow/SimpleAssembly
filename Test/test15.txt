@@ -1,0 +1,18 @@
+.code
+main:
+mov r0 5
+and r0 1
+printNum r0
+print "\n"
+
+mov r0 8
+or r0 1
+printNum r0
+print "\n"
+
+mov r0 10
+xor r0 10
+printNum r0
+print "\n"
+    
+ret

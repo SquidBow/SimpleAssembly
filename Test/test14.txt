@@ -1,0 +1,17 @@
+.code
+main:
+mov r0 10
+div r0 5
+printNum r0
+print "\n"
+
+mul r0 3
+printNum r0
+print "\n"
+
+mod r0 3
+printNum r0
+print "\n"
+ret
+
+
