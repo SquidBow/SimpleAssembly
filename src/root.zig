@@ -9,13 +9,14 @@ pub const Instructions = union(enum) {
     je: Label,
     print: Operand,
     write: struct { destination: Operand, data: Operand },
-    read: struct { register: u8, dataPointer: Operand },
-    readCmpl: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
+    read: struct { register: u8, dataPointer: Operand, dataType: DataTypes },
+    readToRam: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
     push: u8,
     pop: u8,
     call: []const u8,
     ret: void,
-    // input:
+    // input: struct { destination: Operand, maxLength: usize },
+    input: struct { destination: Operand, variable: Variable }, //dataType: DataTypes, maxLength: usize },
 };
 
 pub const Label = union(enum) {
@@ -120,47 +121,43 @@ pub const Cpu = struct {
                     return error.FailedToWriteToRam;
                 };
             },
-            .readCmpl => |data| {
+            .readToRam => |data| {
                 const dataPointer = try self.parseOperandDestination(data.dataPointer);
                 // std.debug.print("\n\nDataPointer: {d}\n\n", .{dataPointer});
 
-                switch (data.destination) {
-                    .register => |reg| {
-                        self.registers[reg] = switch (data.dataType) {
-                            .db => std.mem.readInt(u8, self.ram[dataPointer..][0..1], .little),
-                            .dw => std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little),
-                            .dd => std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little),
-                            else => return error.InvalidDataType,
-                        };
-                    },
-                    else => {
-                        const destination = self.parseOperandDestination(data.destination) catch {
-                            std.debug.print("Unable to find destination to read to", .{});
-                            return error.InvalidDestination;
-                        };
+                const destination = self.parseOperandDestination(data.destination) catch {
+                    std.debug.print("Unable to find destination to read to", .{});
+                    return error.InvalidDestination;
+                };
 
-                        switch (data.dataType) {
-                            .string => {
-                                if (data.stringLength == 0) return error.InvalidStringLength;
-                                @memmove(self.ram[destination..][0..data.stringLength], self.ram[dataPointer..][0..data.stringLength]);
-                            },
-                            .db => self.ram[destination] = self.ram[dataPointer],
-                            .dw => {
-                                const value: u16 = std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little);
-                                std.mem.writeInt(u16, self.ram[destination..][0..2], value, .little);
-                            },
-                            .dd => {
-                                const value: u32 = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
-                                std.mem.writeInt(u32, self.ram[destination..][0..4], value, .little);
-                            },
-                        }
+                switch (data.dataType) {
+                    .string => {
+                        if (data.stringLength == 0) return error.InvalidStringLength;
+                        @memmove(self.ram[destination..][0..data.stringLength], self.ram[dataPointer..][0..data.stringLength]);
+                    },
+                    .db => {
+                        const value: u8 = std.mem.readInt(u8, self.ram[dataPointer..][0..1], .little);
+                        std.mem.writeInt(u8, self.ram[destination..][0..1], value, .little);
+                    },
+                    .dw => {
+                        const value: u16 = std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little);
+                        std.mem.writeInt(u16, self.ram[destination..][0..2], value, .little);
+                    },
+                    .dd => {
+                        const value: u32 = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
+                        std.mem.writeInt(u32, self.ram[destination..][0..4], value, .little);
                     },
                 }
             },
             .read => |data| {
                 const dataPointer = try self.parseOperandDestination(data.dataPointer);
 
-                self.registers[data.register] = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
+                switch (data.dataType) {
+                    .db => self.registers[data.register] = @as(u32, std.mem.readInt(u8, self.ram[dataPointer..][0..1], .little)),
+                    .dw => self.registers[data.register] = @as(u32, std.mem.readInt(u16, self.ram[dataPointer..][0..2], .little)),
+                    .dd => self.registers[data.register] = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little),
+                    else => return error.InvalidDataType,
+                }
             },
             .push => |register| {
                 if (self.stackPointer < 4) {
@@ -178,6 +175,57 @@ pub const Cpu = struct {
 
                 self.registers[register] = std.mem.readInt(u32, self.ram[self.stackPointer..][0..4], .little);
                 self.stackPointer += 4;
+            },
+            // .input => |data| {
+            //     const destination = self.parseOperandDestination(data.destination) catch {
+            //         std.debug.print("Unable to find destination to read to", .{});
+            //         return error.InvalidDestination;
+            //     };
+
+            //     const stdin = std.fs.File.stdin();
+            //     _ = try stdin.read(self.ram[destination .. destination + data.maxLength]);
+            // },
+            .input => |data| {
+                const destination = self.parseOperandDestination(data.destination) catch {
+                    std.debug.print("Unable to find destination to read to", .{});
+                    return error.InvalidDestination;
+                };
+                const stdin = std.fs.File.stdin();
+
+                switch (data.variable.dataType) {
+                    .string => {
+                        _ = try stdin.read(self.ram[destination .. destination + data.variable.len]);
+                    },
+                    else => {
+                        var buffer: [10]u8 = undefined;
+                        const readBytes = try stdin.read(&buffer);
+
+                        switch (data.variable.dataType) {
+                            .db => {
+                                const input = std.mem.trim(u8, buffer[0..readBytes], " \n\r\t");
+                                const value: u8 = std.fmt.parseInt(u8, input, 10) catch {
+                                    return error.CantConvertStringToInt;
+                                };
+                                std.mem.writeInt(u8, self.ram[destination..][0..1], value, .little);
+                            },
+                            .dw => {
+                                const input = std.mem.trim(u8, buffer[0..readBytes], " \n\r\t");
+                                const value: u16 = std.fmt.parseInt(u16, input, 10) catch {
+                                    return error.CantConvertStringToInt;
+                                };
+                                std.mem.writeInt(u16, self.ram[destination..][0..2], value, .little);
+                            },
+                            .dd => {
+                                const input = std.mem.trim(u8, buffer[0..readBytes], " \n\r\t");
+                                const value: u32 = std.fmt.parseInt(u32, input, 10) catch {
+                                    return error.CantConvertStringToInt;
+                                };
+                                std.mem.writeInt(u32, self.ram[destination..][0..4], value, .little);
+                            },
+                            else => return error.InvalidDataType,
+                        }
+                    },
+                }
             },
             else => {},
         }
@@ -313,7 +361,7 @@ pub const Cpu = struct {
             var i: u32 = self.codeTable.get("main") orelse return error.MainNotFound;
             var depth: u32 = 0;
 
-            while (i < instructions.len) : (i += 1) {
+            while (i < instructions.len) {
                 const instruction = instructions[i];
 
                 switch (instruction) {
@@ -322,6 +370,7 @@ pub const Cpu = struct {
                             std.debug.print("Unable to parse the label\n", .{});
                             return;
                         };
+                        if (i == 0) continue;
                         i -= 1;
                     },
                     .je => |label| {
@@ -330,6 +379,7 @@ pub const Cpu = struct {
                                 std.debug.print("Unable to parse the label\n", .{});
                                 return;
                             };
+                            if (i == 0) continue;
                             i -= 1;
                         }
                     },
@@ -341,7 +391,7 @@ pub const Cpu = struct {
 
                         const line: u32 = self.codeTable.get(procName) orelse return error.InvalidProcName;
                         try self.executeInstruction(Instructions{ .push = 0 });
-                        self.registers[0] = i;
+                        self.registers[0] = @bitCast(i);
                         try self.executeInstruction(Instructions{ .push = 0 });
                         depth += 1;
                         i = line - 1;
@@ -358,6 +408,8 @@ pub const Cpu = struct {
                         try self.executeInstruction(instruction);
                     },
                 }
+
+                i += 1;
             }
         }
     }

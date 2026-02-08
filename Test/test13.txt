@@ -1,0 +1,19 @@
+.data
+number db 13
+
+.code
+main:
+print "Type the number to guess: "
+
+input 20 dw
+read r0 20 dw
+
+cmp r0 number 
+je end
+
+print "Wrong number!"
+jmp main
+
+end:
+print "Correct."
+ret

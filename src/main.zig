@@ -170,10 +170,22 @@ fn getVariableUInt(ram: []const u8, variable: root.Variable) u32 {
 
 fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *std.mem.TokenIterator(u8, .sequence), line: []const u8) !root.Instructions {
     return switch (instrCode) {
-        .add => root.Instructions{ .add = .{ .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
-        .sub => root.Instructions{ .sub = .{ .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
-        .mov => root.Instructions{ .mov = .{ .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
-        .cmp => root.Instructions{ .cmp = .{ .valA = parseOperandToken(tokens.next() orelse return error.UnableToFindToken) catch return error.UnableToParseOperand, .valB = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .add => root.Instructions{ .add = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .sub => root.Instructions{ .sub = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .mov => root.Instructions{ .mov = .{
+            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
+        .cmp => root.Instructions{ .cmp = .{
+            .valA = parseOperandToken(tokens.next() orelse return error.UnableToFindToken) catch return error.UnableToParseOperand,
+            .valB = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+        } },
         .jmp => root.Instructions{
             .jmp = try parseLabel(std.mem.trim(u8, tokens.rest(), " ")),
         },
@@ -203,17 +215,54 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             },
         },
         .write => root.Instructions{ .write = .{ .destination = parseOperandToken(tokens.next().?) catch return error.UnableToParseOperand, .data = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
-        .readCmpl => root.Instructions{ .readCmpl = .{ .destination = parseOperandToken(tokens.next() orelse return error.InvalidReadDestination) catch
-            return error.UnableToParseOperand, .dataPointer = parseOperandToken(tokens.next() orelse return error.InvalidReadDataPointer) catch
-            return error.UnableToParseOperand, .dataType = std.meta.stringToEnum(root.DataTypes, tokens.next() orelse "0") orelse
-            root.DataTypes.db, .stringLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch {
-            return error.InvalidStringLength;
-        } } },
-        .read => root.Instructions{ .read = .{ .register = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .dataPointer = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .readToRam => root.Instructions{ .readToRam = .{
+            .destination = parseOperandToken(tokens.next() orelse return error.InvalidReadDestination) catch
+                return error.UnableToParseOperand,
+            .dataPointer = parseOperandToken(tokens.next() orelse return error.InvalidReadDataPointer) catch
+                return error.UnableToParseOperand,
+            .dataType = std.meta.stringToEnum(root.DataTypes, tokens.next() orelse "0") orelse
+                root.DataTypes.db,
+            .stringLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch {
+                return error.InvalidStringLength;
+            },
+        } },
+        .read => root.Instructions{ .read = .{
+            .register = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
+            .dataPointer = parseOperandToken(std.mem.trim(u8, tokens.next() orelse return error.InvalidToken, " ")) catch return error.UnableToParseOperand,
+            .dataType = std.meta.stringToEnum(root.DataTypes, tokens.next() orelse "0") orelse root.DataTypes.dd,
+        } },
         .push => root.Instructions{ .push = std.fmt.parseInt(u8, tokens.rest()[1..], 10) catch return error.InvalidRegister },
         .pop => root.Instructions{ .pop = std.fmt.parseInt(u8, tokens.rest()[1..], 10) catch return error.InvalidRegister },
         .call => root.Instructions{ .call = tokens.rest() },
         .ret => root.Instructions{ .ret = {} },
+        // .input => root.Instructions{ .input = .{
+        //     .destination = parseOperandToken(std.mem.trim(u8, tokens.next() orelse return error.InvalidToken, " ")) catch return error.UnableToParseOperand,
+        //     .maxLength = std.fmt.parseInt(usize, tokens.next() orelse return error.InvalidInputSize, 10) catch return error.InvalidInputSize,
+        // } },
+        .input => root.Instructions{
+            .input = .{
+                .destination = parseOperandToken(std.mem.trim(u8, tokens.next() orelse return error.InvalidToken, " ")) catch return error.UnableToParseOperand,
+                .variable = block: {
+                    const token = tokens.next() orelse return error.InvalidToken;
+
+                    if (std.meta.stringToEnum(root.DataTypes, token)) |dataType| {
+                        break :block root.Variable{ .dataType = dataType, .len = 0, .pointer = 0 };
+                    }
+
+                    const len = std.fmt.parseInt(usize, token, 10) catch {
+                        return error.InvalidToken;
+                    };
+
+                    break :block root.Variable{
+                        .dataType = root.DataTypes.string,
+                        .len = len,
+                        .pointer = 0,
+                    };
+                },
+                //.dataType = std.meta.stringToEnum(root.DataTypes, tokens.next() orelse "0") orelse root.DataTypes.string,
+                //.maxLength = std.fmt.parseInt(usize, tokens.next() orelse "0", 10) catch return error.InvalidStringLength,
+            },
+        },
     };
 }
 
