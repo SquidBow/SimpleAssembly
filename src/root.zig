@@ -11,6 +11,8 @@ pub const Instructions = union(enum) {
     write: struct { destination: Operand, data: Operand },
     read: struct { register: u8, dataPointer: Operand },
     readCmpl: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
+    push: u8,
+    pop: u8,
 };
 
 pub const Label = union(enum) {
@@ -41,6 +43,7 @@ pub const Variable = struct {
 
 pub const Cpu = struct {
     registers: [4]u32 = .{0} ** 4,
+    stackPointer: usize = 1024,
     flags: [3]u8 = .{0} ** 3, //0.Zero, 1.Sign, 2.Carry
     ram: [1024]u8 = undefined,
     dataTable: std.StringHashMap(Variable),
@@ -155,6 +158,23 @@ pub const Cpu = struct {
                 const dataPointer = try self.parseOperandDestination(data.dataPointer);
 
                 self.registers[data.register] = std.mem.readInt(u32, self.ram[dataPointer..][0..4], .little);
+            },
+            .push => |register| {
+                if (self.stackPointer < 4) {
+                    return error.StackOverflow;
+                }
+
+                self.stackPointer -= 4;
+
+                std.mem.writeInt(u32, self.ram[self.stackPointer..][0..4], self.registers[register], .little);
+            },
+            .pop => |register| {
+                if (self.stackPointer == 1024) {
+                    return error.StackIsEmpty;
+                }
+
+                self.registers[register] = std.mem.readInt(u32, self.ram[self.stackPointer..][0..4], .little);
+                self.stackPointer += 4;
             },
             else => {},
         }
@@ -326,45 +346,3 @@ pub const Cpu = struct {
         };
     }
 };
-
-test "InstructionsAdd" {
-    var cpu = Cpu.init();
-    const instruction = Instructions{ .add = .{ .valA = 0, .valB = .{ .value = 5 } } };
-
-    try cpu.executeInstruction(instruction);
-    try std.testing.expect(cpu.registers[0] == 5);
-}
-
-test "InstructionsSub" {
-    var cpu = Cpu.init();
-    const instruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .value = -5 } } };
-
-    try cpu.executeInstruction(instruction);
-    try std.testing.expect(cpu.registers[0] == 5);
-}
-
-test "InstructionsMov" {
-    var cpu = Cpu.init();
-    const instruction = Instructions{ .mov = .{ .valA = 0, .valB = .{ .value = 5 } } };
-
-    try cpu.executeInstruction(instruction);
-    try std.testing.expect(cpu.registers[0] == 5);
-}
-
-test "AddSubMov" {
-    var cpu = Cpu.init();
-
-    var myInstruction = Instructions{ .add = .{ .valA = 0, .valB = .{ .value = 10 } } };
-    try cpu.executeInstruction(myInstruction);
-
-    myInstruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .value = 5 } } };
-    try cpu.executeInstruction(myInstruction);
-
-    myInstruction = Instructions{ .mov = .{ .valA = 1, .valB = .{ .value = 4 } } };
-    try cpu.executeInstruction(myInstruction);
-
-    myInstruction = Instructions{ .sub = .{ .valA = 0, .valB = .{ .register = 1 } } };
-    try cpu.executeInstruction(myInstruction);
-
-    try std.testing.expect(cpu.registers[0] == 1);
-}

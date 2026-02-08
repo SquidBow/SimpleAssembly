@@ -1,0 +1,8 @@
+.code
+mov r0 35
+print r0
+push r0
+mov r0 36
+print r0
+pop r0
+print r0

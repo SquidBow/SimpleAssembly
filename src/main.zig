@@ -210,6 +210,8 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             return error.InvalidStringLength;
         } } },
         .read => root.Instructions{ .read = .{ .register = try std.fmt.parseInt(u8, tokens.next().?[1..], 10), .dataPointer = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand } },
+        .push => root.Instructions{ .push = std.fmt.parseInt(u8, tokens.rest()[1..], 10) catch return error.InvalidRegister },
+        .pop => root.Instructions{ .pop = std.fmt.parseInt(u8, tokens.rest()[1..], 10) catch return error.InvalidRegister },
     };
 }
 
