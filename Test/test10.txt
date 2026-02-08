@@ -2,7 +2,8 @@
 value dd 35
 
 .code
+main:
 mov r0 33
 print r0
-read r0 0
+read r0 r1
 print r0

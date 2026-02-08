@@ -15,6 +15,7 @@ pub const Instructions = union(enum) {
     pop: u8,
     call: []const u8,
     ret: void,
+    // input:
 };
 
 pub const Label = union(enum) {
@@ -240,7 +241,7 @@ pub const Cpu = struct {
 
     fn parseOperandDestination(self: *Cpu, write: Operand) !u32 {
         return switch (write) {
-            .register => return error.CantWriteToARegister,
+            .register => |regIndex| self.registers[regIndex],
             .value => |value| value,
             .label => |label| if (self.dataTable.get(label)) |variable| variable.pointer else return error.InvalidLabel,
             .string => return error.CantWriteToAString,
