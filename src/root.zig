@@ -13,6 +13,8 @@ pub const Instructions = union(enum) {
     readCmpl: struct { destination: Operand, dataPointer: Operand, dataType: DataTypes, stringLength: usize },
     push: u8,
     pop: u8,
+    call: []const u8,
+    ret: void,
 };
 
 pub const Label = union(enum) {
@@ -307,11 +309,10 @@ pub const Cpu = struct {
 
     pub fn executeCode(self: *Cpu, instructions: []Instructions) !void {
         {
-            var i: u32 = 0;
+            var i: u32 = self.codeTable.get("main") orelse return error.MainNotFound;
+            var depth: u32 = 0;
 
-            while (i < instructions.len) : ({
-                i += 1;
-            }) {
+            while (i < instructions.len) : (i += 1) {
                 const instruction = instructions[i];
 
                 switch (instruction) {
@@ -330,6 +331,27 @@ pub const Cpu = struct {
                             };
                             i -= 1;
                         }
+                    },
+                    .call => |name| {
+                        const procName = std.mem.concat(self.allocator, u8, &[_][]const u8{ "proc ", name }) catch {
+                            return error.OutOfMemory;
+                        };
+                        defer self.allocator.free(procName);
+
+                        const line: u32 = self.codeTable.get(procName) orelse return error.InvalidProcName;
+                        try self.executeInstruction(Instructions{ .push = 0 });
+                        self.registers[0] = i;
+                        try self.executeInstruction(Instructions{ .push = 0 });
+                        depth += 1;
+                        i = line - 1;
+                    },
+                    .ret => {
+                        if (depth == 0) break;
+
+                        try self.executeInstruction(Instructions{ .pop = 0 });
+                        i = self.registers[0];
+                        try self.executeInstruction(Instructions{ .pop = 0 });
+                        depth -= 1;
                     },
                     else => {
                         try self.executeInstruction(instruction);

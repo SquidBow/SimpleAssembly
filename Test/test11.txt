@@ -1,4 +1,5 @@
 .code
+proc main:
 mov r0 35
 print r0
 push r0
