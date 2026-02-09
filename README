@@ -55,12 +55,13 @@ Comments must me in their own line and start with ';' or '/' or '#'
 # Procedures
 Declare main proc with: main:
 
-To declare proc use: proc [name]
-To call a proc use: call [name]
+Procs are declared as simple labels: [proc name]: .
+And are called that way.
 
 Each proc has to have a "ret" statement where it ends
 
 # Example program
+
 
 .data
 //Create a variable to store data
@@ -74,7 +75,7 @@ main:
 mov r0 33
 
 //Call the printString proc
-call printString
+call proc printString
 
 //Move the data from the variable into register 0
 mov r0 variable
@@ -91,3 +92,8 @@ print r0
 
 //Return to main
 ret
+
+# Runing the interpreter
+1. Download zig
+2. Go into the folder
+3. Run: zig build run -- filename (e.g. zig build run -- Test/Example.txt)

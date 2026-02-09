@@ -670,14 +670,9 @@ pub const Cpu = struct {
                         }
                     },
                     .call => |name| {
-                        const procName = std.mem.concat(self.allocator, u8, &[_][]const u8{ "proc ", name }) catch {
-                            return error.OutOfMemory;
-                        };
-                        defer self.allocator.free(procName);
-
                         const variable: u32 = self.registers[0];
 
-                        const line: u32 = self.codeTable.get(procName) orelse return error.InvalidProcName;
+                        const line: u32 = self.codeTable.get(name) orelse return error.InvalidProcName;
                         try self.executeInstruction(Instructions{ .push = 0 });
                         self.registers[0] = @bitCast(i);
                         try self.executeInstruction(Instructions{ .push = 0 });

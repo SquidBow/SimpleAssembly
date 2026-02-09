@@ -3,16 +3,16 @@ main:
 mov r1 65
 push r1
 mov r1 66
-call test_proc
+call proc test_proc
 pop r1
 print r1
 mov r1 33
-call test_proc
+call proc test_proc
 ret
 
 proc test_proc:
 print r1
-call testProc2
+call proc testProc2
 ret
 
 proc testProc2:

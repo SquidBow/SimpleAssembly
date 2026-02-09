@@ -11,7 +11,7 @@ main:
 mov r0 33
 
 //Call the printString proc
-call printString
+call proc printString
 
 //Move the data from the variable into register 0
 mov r0 variable
