@@ -179,8 +179,8 @@ fn switchInstructionCode(instrCode: std.meta.Tag(root.Instructions), tokens: *st
             .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
         } },
         .mov => root.Instructions{ .mov = .{
-            .reg = try std.fmt.parseInt(u8, tokens.next().?[1..], 10),
-            .val = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
+            .valA = parseOperandToken(std.mem.trim(u8, tokens.next() orelse return error.InvalidToken, " ")) catch return error.UnableToParseOperand,
+            .valB = parseOperandToken(std.mem.trim(u8, tokens.rest(), " ")) catch return error.UnableToParseOperand,
         } },
         .cmp => root.Instructions{ .cmp = .{
             .valA = parseOperandToken(tokens.next() orelse return error.UnableToFindToken) catch return error.UnableToParseOperand,

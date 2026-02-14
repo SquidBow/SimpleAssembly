@@ -3,7 +3,7 @@ const std = @import("std");
 pub const Instructions = union(enum) {
     add: struct { reg: u8, val: Operand },
     sub: struct { reg: u8, val: Operand },
-    mov: struct { reg: u8, val: Operand },
+    mov: struct { valA: Operand, valB: Operand },
     cmp: struct { valA: Operand, valB: Operand },
     jmp: Label,
     je: Label,
@@ -119,12 +119,20 @@ pub const Cpu = struct {
                 self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
             },
             .mov => |data| {
-                const valB = try self.parseOperandValue(data.val);
+                switch (data.valA) {
+                    .register => |reg| {
+                        const valB = try self.parseOperandValue(data.valB);
+                        self.registers[reg] = valB;
+                        self.flags[0] = if (valB == 0) 1 else 0;
+                        self.flags[1] = if (@as(i32, @bitCast(valB)) < 0) 1 else 0;
+                    },
+                    else => {
+                        const valA = try self.parseOperandDestination(data.valA);
 
-                self.registers[data.reg] = valB;
-
-                self.flags[0] = if (self.registers[data.reg] == 0) 1 else 0;
-                self.flags[1] = if (@as(i32, @bitCast(self.registers[data.reg])) < 0) 1 else 0;
+                        try self.WriteToRam(data.valB, valA);
+                    },
+                }
+                // self.registers[data.valA] = valB;
             },
             .cmp => |data| {
                 const valA = try self.parseOperandValue(data.valA);

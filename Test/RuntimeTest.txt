@@ -1,0 +1,20 @@
+.code
+main:
+mov data 35
+mov r0 data
+push r1
+read r1 0
+mov r1 r0
+write 0 r1
+pop r1
+push r0
+read r0 0
+print r0
+pop r0
+push r1
+read r1 0
+cmp r1 r0
+pop r1
+ret 
+.data
+data dd 0
